@@ -18,6 +18,9 @@
 "button.save" = "Save";
 "button.update" = "Update";
 "button.cancel" = "Cancel";
+"security.riskyLocalBind.title" = "Local listener may be exposed";
+"security.riskyLocalBind.message" = "This tunnel uses a non-loopback local bind address. Other devices on the network may be able to access the forwarded service, and a dynamic SOCKS tunnel may be usable as a network proxy. Continue?";
+"security.continueAnyway" = "Continue";
 "form.mode" = "Mode";
 "form.name" = "Name";
 "form.sshHost" = "SSH Host";

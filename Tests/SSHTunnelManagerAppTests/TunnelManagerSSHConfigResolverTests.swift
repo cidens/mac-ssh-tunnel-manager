@@ -92,6 +92,63 @@ import SSHTunnelCore
     #expect(resolver.requestedNames == ["example-service"])
 }
 
+@MainActor
+@Test func addDynamicForwardRequiresConfirmationForNonLoopbackBind() throws {
+    let directory = try temporaryDirectory()
+    let resolver = StubSSHConfigResolver(results: [
+        "example-bastion": .resolved("user appuser\nhostname example-bastion\n")
+    ])
+    let manager = TunnelManager(
+        store: TunnelConfigStore(configURL: directory.appending(path: "tunnels.json")),
+        sshConfigResolver: resolver
+    )
+    defer { manager.prepareForApplicationTermination() }
+    var draft = TunnelDraft()
+    draft.mode = .dynamicForward
+    draft.name = "Example SOCKS"
+    draft.sshHost = "example-bastion"
+    draft.localHost = "*"
+    draft.localPort = "1080"
+    var didSucceed = false
+
+    #expect(!manager.addTunnel(draft, onSuccess: { didSucceed = true }))
+    #expect(manager.tunnels.isEmpty)
+    #expect(manager.riskWarning != nil)
+    #expect(!didSucceed)
+
+    manager.confirmRiskyOperation()
+
+    #expect(manager.tunnels.count == 1)
+    #expect(manager.riskWarning == nil)
+    #expect(didSucceed)
+}
+
+@MainActor
+@Test func addSSHConfigTunnelRequiresConfirmationForNonLoopbackLocalForward() throws {
+    let directory = try temporaryDirectory()
+    let resolver = StubSSHConfigResolver(results: [
+        "example-service": .resolved("localforward *:18080 127.0.0.1:8080\n")
+    ])
+    let manager = TunnelManager(
+        store: TunnelConfigStore(configURL: directory.appending(path: "tunnels.json")),
+        sshConfigResolver: resolver
+    )
+    defer { manager.prepareForApplicationTermination() }
+    var draft = TunnelDraft()
+    draft.mode = .sshConfig
+    draft.name = "Example Service"
+    draft.sshConfigName = "example-service"
+
+    #expect(!manager.addTunnel(draft))
+    #expect(manager.tunnels.isEmpty)
+    #expect(manager.riskWarning != nil)
+
+    manager.cancelRiskyOperation()
+
+    #expect(manager.tunnels.isEmpty)
+    #expect(manager.riskWarning == nil)
+}
+
 private final class StubSSHConfigResolver: SSHConfigResolving {
     private let results: [String: SSHConfigResolution]
     private(set) var requestedNames: [String] = []

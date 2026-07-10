@@ -18,6 +18,9 @@
 "button.save" = "保存";
 "button.update" = "更新";
 "button.cancel" = "取消";
+"security.riskyLocalBind.title" = "本地监听可能暴露";
+"security.riskyLocalBind.message" = "此隧道使用了非回环本地监听地址，局域网中的其他设备可能访问转发服务；动态 SOCKS 还可能被当作局域网代理使用。是否继续？";
+"security.continueAnyway" = "继续";
 "form.mode" = "模式";
 "form.name" = "名称";
 "form.sshHost" = "SSH Host";

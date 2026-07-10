@@ -156,6 +156,18 @@ enum AppStrings {
         string("button.cancel", language: language)
     }
 
+    static func riskyLocalBindTitle(language: String? = nil) -> String {
+        string("security.riskyLocalBind.title", language: language)
+    }
+
+    static func riskyLocalBindMessage(language: String? = nil) -> String {
+        string("security.riskyLocalBind.message", language: language)
+    }
+
+    static func continueAnyway(language: String? = nil) -> String {
+        string("security.continueAnyway", language: language)
+    }
+
     static func formMode(language: String? = nil) -> String {
         string("form.mode", language: language)
     }

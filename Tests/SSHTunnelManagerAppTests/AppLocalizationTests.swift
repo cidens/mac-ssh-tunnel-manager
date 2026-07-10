@@ -8,6 +8,8 @@ import Testing
     #expect(AppStrings.emptyStateTitle(language: "zh-Hans") == "还没有隧道配置")
     #expect(AppStrings.modeDynamicForward(language: "en") == "Dynamic SOCKS")
     #expect(AppStrings.modeDynamicForward(language: "zh-Hans") == "动态 SOCKS")
+    #expect(AppStrings.riskyLocalBindTitle(language: "en") == "Local listener may be exposed")
+    #expect(AppStrings.riskyLocalBindTitle(language: "zh-Hans") == "本地监听可能暴露")
 }
 
 @Test func appStringsFormatRuntimeErrorsInEnglishAndChinese() {

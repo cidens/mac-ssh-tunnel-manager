@@ -21,6 +21,15 @@ import Testing
     #expect(!SSHConfigOutputParser.hasLocalForward(output))
 }
 
+@Test func extractsLocalForwardBindHosts() {
+    let output = """
+    localforward 127.0.0.1:18080 127.0.0.1:8080
+    localforward *:18081 127.0.0.1:8081
+    """
+
+    #expect(SSHConfigOutputParser.localForwardBindHosts(output) == ["127.0.0.1", "*"])
+}
+
 @Test func detectsAnyForwardingDirectiveInSSHConfigOutput() {
     let output = """
     user appuser

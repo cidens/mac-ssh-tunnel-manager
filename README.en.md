@@ -133,6 +133,8 @@ Remote: 127.0.0.1 8080
 Open URL: http://127.0.0.1:18080
 ```
 
+If the local bind address is not a loopback address, the app asks for confirmation before saving or starting the tunnel.
+
 The app starts SSH with:
 
 ```bash
@@ -171,6 +173,8 @@ Example one-off Git command:
 ALL_PROXY=socks5h://127.0.0.1:1080 git fetch
 ```
 
+Keep the SOCKS bind address at `127.0.0.1` unless LAN access is intentional. The app asks for confirmation before using a non-loopback address because other devices may be able to access the proxy.
+
 ### SSH Config
 
 Use this when the forwarding rule already lives in `~/.ssh/config`. The app only stores the SSH config alias and does not edit your SSH config file.
@@ -199,6 +203,8 @@ The app starts SSH with:
 ```
 
 SSH Config mode requires the selected `Host` to contain at least one `LocalForward`.
+
+The app also checks the resolved `LocalForward` bind address and asks for confirmation when it is not a loopback address.
 
 ## Safety Boundary
 

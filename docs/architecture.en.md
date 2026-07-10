@@ -129,7 +129,7 @@ Dynamic SOCKS mode generates a complete `-D` argument from app fields:
   sshHost
 ```
 
-This mode does not declare a fixed remote target. The destination is chosen by the client using the SOCKS proxy. The app validates the SSH Host, bind host, and local port, then checks whether the local port is already occupied before saving and starting.
+This mode does not declare a fixed remote target. The destination is chosen by the client using the SOCKS proxy. The app validates the SSH Host, bind host, and local port, then checks whether the local port is already occupied before saving and starting. A non-loopback local bind requires confirmation before saving or starting to avoid unintentionally exposing the SOCKS listener.
 
 Sanitized example:
 
@@ -163,7 +163,7 @@ Before saving and starting, the app runs:
 ssh -G sshConfigName
 ```
 
-It parses the output and requires at least one `localforward`. The `ssh -G` validation has a 10-second timeout so configurations with `Match exec`, `ProxyJump`, or slow DNS are not rejected too aggressively.
+It parses the output, requires at least one `localforward`, and checks its local bind address. A non-loopback bind requires confirmation before saving or starting. The `ssh -G` validation has a 10-second timeout so configurations with `Match exec`, `ProxyJump`, or slow DNS are not rejected too aggressively.
 
 ## Runtime State
 
@@ -200,7 +200,9 @@ Validation rules:
 
 - `sshHost` and `sshConfigName` are required, cannot start with `-`, and cannot contain whitespace, control characters, or obvious shell metacharacters.
 - Local Forward endpoints and Dynamic SOCKS bind hosts reject bare IPv6. IPv6 must use bracketed form such as `[::1]`.
-- Local bind host allows exact `*`; remote host does not allow wildcards.
+- Local bind host still allows exact `*` for intentional LAN access, but non-loopback binds require explicit confirmation before saving or starting; remote host does not allow wildcards.
+- `127.0.0.1`, `localhost`, `::1`, and `[::1]` are treated as loopback addresses. Other local bind values are treated as potentially exposed without DNS resolution.
+- SSH Config mode checks the local bind addresses from resolved `LocalForward` entries and uses the same confirmation.
 - `openURL` accepts only `http` or `https` URLs with a host.
 - Ports must be in `1...65535`.
 

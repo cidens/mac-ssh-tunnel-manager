@@ -9,8 +9,17 @@ struct TunnelRuntimeState {
     var stderrTail: StderrTailBuffer?
 }
 
+struct TunnelRiskWarning: Identifiable {
+    let id = UUID()
+    let message: String
+}
+
+private struct TunnelRiskConfirmationRequired: Error {
+    let message: String
+}
+
 private enum SSHConfigLocalForwardStatus {
-    case hasLocalForward
+    case hasLocalForward(isPotentiallyExposed: Bool)
     case missingLocalForward
     case timedOut
 }
@@ -26,12 +35,14 @@ final class TunnelManager: ObservableObject {
     @Published private(set) var tunnels: [TunnelConfig] = []
     @Published private(set) var runtimes: [TunnelConfig.ID: TunnelRuntimeState] = [:]
     @Published var addError = ""
+    @Published var riskWarning: TunnelRiskWarning?
 
     private let store: TunnelConfigStore
     private let sshConfigResolver: any SSHConfigResolving
     private let commandBuilder = SSHCommandBuilder()
     private var refreshTimer: Timer?
     private var willTerminateObserver: NSObjectProtocol?
+    private var pendingRiskOperation: (() -> Void)?
 
     init(
         store: TunnelConfigStore = TunnelManager.defaultStore(),
@@ -102,13 +113,28 @@ final class TunnelManager: ObservableObject {
     }
 
     @discardableResult
-    func addTunnel(_ draft: TunnelDraft) -> Bool {
+    func addTunnel(_ draft: TunnelDraft, onSuccess: (() -> Void)? = nil) -> Bool {
+        addTunnel(draft, allowRiskyBind: false, onSuccess: onSuccess)
+    }
+
+    @discardableResult
+    private func addTunnel(
+        _ draft: TunnelDraft,
+        allowRiskyBind: Bool,
+        onSuccess: (() -> Void)?
+    ) -> Bool {
         addError = ""
         do {
-            let tunnel = try validatedTunnel(from: draft)
+            let tunnel = try validatedTunnel(from: draft, allowRiskyBind: allowRiskyBind)
             tunnels.append(tunnel)
             try save()
+            onSuccess?()
             return true
+        } catch let confirmation as TunnelRiskConfirmationRequired {
+            requestRiskConfirmation(message: confirmation.message) { [weak self] in
+                _ = self?.addTunnel(draft, allowRiskyBind: true, onSuccess: onSuccess)
+            }
+            return false
         } catch {
             addError = error.localizedDescription
             return false
@@ -116,7 +142,21 @@ final class TunnelManager: ObservableObject {
     }
 
     @discardableResult
-    func updateTunnel(_ tunnel: TunnelConfig, with draft: TunnelDraft) -> Bool {
+    func updateTunnel(
+        _ tunnel: TunnelConfig,
+        with draft: TunnelDraft,
+        onSuccess: (() -> Void)? = nil
+    ) -> Bool {
+        updateTunnel(tunnel, with: draft, allowRiskyBind: false, onSuccess: onSuccess)
+    }
+
+    @discardableResult
+    private func updateTunnel(
+        _ tunnel: TunnelConfig,
+        with draft: TunnelDraft,
+        allowRiskyBind: Bool,
+        onSuccess: (() -> Void)?
+    ) -> Bool {
         addError = ""
         guard !isManagedProcessRunning(for: tunnel) else {
             addError = AppStrings.stopBeforeEditing()
@@ -124,7 +164,11 @@ final class TunnelManager: ObservableObject {
         }
 
         do {
-            let updatedTunnel = try validatedTunnel(from: draft, id: tunnel.id)
+            let updatedTunnel = try validatedTunnel(
+                from: draft,
+                id: tunnel.id,
+                allowRiskyBind: allowRiskyBind
+            )
             guard let index = tunnels.firstIndex(where: { $0.id == tunnel.id }) else {
                 return false
             }
@@ -132,7 +176,18 @@ final class TunnelManager: ObservableObject {
             runtimes[tunnel.id]?.lastError = ""
             try save()
             refreshStatuses()
+            onSuccess?()
             return true
+        } catch let confirmation as TunnelRiskConfirmationRequired {
+            requestRiskConfirmation(message: confirmation.message) { [weak self] in
+                _ = self?.updateTunnel(
+                    tunnel,
+                    with: draft,
+                    allowRiskyBind: true,
+                    onSuccess: onSuccess
+                )
+            }
+            return false
         } catch {
             addError = error.localizedDescription
             return false
@@ -151,6 +206,10 @@ final class TunnelManager: ObservableObject {
     }
 
     func start(_ tunnel: TunnelConfig) {
+        start(tunnel, allowRiskyBind: false)
+    }
+
+    private func start(_ tunnel: TunnelConfig, allowRiskyBind: Bool) {
         do {
             try commandBuilder.validate(tunnel)
             try validateGeneratedForwardingHost(tunnel)
@@ -168,8 +227,12 @@ final class TunnelManager: ObservableObject {
             if tunnel.mode == .sshConfig {
                 let sshConfigName = tunnel.sshConfigName ?? ""
                 switch sshConfigLocalForwardStatus(named: sshConfigName) {
-                case .hasLocalForward:
-                    break
+                case .hasLocalForward(let isPotentiallyExposed):
+                    if isPotentiallyExposed && !allowRiskyBind {
+                        throw TunnelRiskConfirmationRequired(
+                            message: AppStrings.riskyLocalBindMessage()
+                        )
+                    }
                 case .missingLocalForward:
                     var runtime = runtimes[tunnel.id] ?? TunnelRuntimeState()
                     runtime.process = nil
@@ -186,6 +249,8 @@ final class TunnelManager: ObservableObject {
                     runtimes[tunnel.id] = runtime
                     return
                 }
+            } else {
+                try validateRiskyLocalBind(tunnel, allowRiskyBind: allowRiskyBind)
             }
 
             let command = commandBuilder.buildStartCommand(for: tunnel)
@@ -228,6 +293,10 @@ final class TunnelManager: ObservableObject {
 
             try process.run()
             refreshStatuses()
+        } catch let confirmation as TunnelRiskConfirmationRequired {
+            requestRiskConfirmation(message: confirmation.message) { [weak self] in
+                self?.start(tunnel, allowRiskyBind: true)
+            }
         } catch {
             var runtime = runtimes[tunnel.id] ?? TunnelRuntimeState()
             runtime.process = nil
@@ -277,6 +346,18 @@ final class TunnelManager: ObservableObject {
         NSApplication.shared.terminate(nil)
     }
 
+    func confirmRiskyOperation() {
+        let operation = pendingRiskOperation
+        pendingRiskOperation = nil
+        riskWarning = nil
+        operation?()
+    }
+
+    func cancelRiskyOperation() {
+        pendingRiskOperation = nil
+        riskWarning = nil
+    }
+
     func prepareForApplicationTermination() {
         stopAllManagedTunnels(forceKillAfterTimeout: true)
         refreshTimer?.invalidate()
@@ -310,7 +391,11 @@ final class TunnelManager: ObservableObject {
         try store.save(tunnels)
     }
 
-    private func validatedTunnel(from draft: TunnelDraft, id: TunnelConfig.ID = UUID()) throws -> TunnelConfig {
+    private func validatedTunnel(
+        from draft: TunnelDraft,
+        id: TunnelConfig.ID = UUID(),
+        allowRiskyBind: Bool
+    ) throws -> TunnelConfig {
         let tunnel = try draft.makeConfig(id: id)
         try commandBuilder.validate(tunnel)
         try validateGeneratedForwardingHost(tunnel)
@@ -320,8 +405,12 @@ final class TunnelManager: ObservableObject {
         if tunnel.mode == .sshConfig {
             let sshConfigName = tunnel.sshConfigName ?? ""
             switch sshConfigLocalForwardStatus(named: sshConfigName) {
-            case .hasLocalForward:
-                break
+            case .hasLocalForward(let isPotentiallyExposed):
+                if isPotentiallyExposed && !allowRiskyBind {
+                    throw TunnelRiskConfirmationRequired(
+                        message: AppStrings.riskyLocalBindMessage()
+                    )
+                }
             case .missingLocalForward:
                 throw TunnelValidationError.sshConfigMissingLocalForward(sshConfigName)
             case .timedOut:
@@ -330,6 +419,8 @@ final class TunnelManager: ObservableObject {
                     Self.sshConfigValidationTimeoutSeconds
                 )
             }
+        } else {
+            try validateRiskyLocalBind(tunnel, allowRiskyBind: allowRiskyBind)
         }
         return tunnel
     }
@@ -339,6 +430,21 @@ final class TunnelManager: ObservableObject {
     }
 
     private static let sshConfigValidationTimeoutSeconds = 10
+
+    private func validateRiskyLocalBind(_ tunnel: TunnelConfig, allowRiskyBind: Bool) throws {
+        guard !allowRiskyBind,
+              Self.shouldCheckLocalPort(for: tunnel),
+              Self.isPotentiallyExposedLocalBindHost(tunnel.localHost) else {
+            return
+        }
+
+        throw TunnelRiskConfirmationRequired(message: AppStrings.riskyLocalBindMessage())
+    }
+
+    private static func isPotentiallyExposedLocalBindHost(_ host: String) -> Bool {
+        let normalized = host.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        return !["127.0.0.1", "localhost", "::1", "[::1]"].contains(normalized)
+    }
 
     private func validateGeneratedForwardingHost(_ tunnel: TunnelConfig) throws {
         guard Self.shouldCheckLocalPort(for: tunnel) else {
@@ -380,7 +486,13 @@ final class TunnelManager: ObservableObject {
             timeout: TimeInterval(Self.sshConfigValidationTimeoutSeconds)
         ) {
         case .resolved(let text):
-            return SSHConfigOutputParser.hasLocalForward(text) ? .hasLocalForward : .missingLocalForward
+            guard SSHConfigOutputParser.hasLocalForward(text) else {
+                return .missingLocalForward
+            }
+            let isPotentiallyExposed = SSHConfigOutputParser
+                .localForwardBindHosts(text)
+                .contains(where: Self.isPotentiallyExposedLocalBindHost)
+            return .hasLocalForward(isPotentiallyExposed: isPotentiallyExposed)
         case .failed:
             return .missingLocalForward
         case .timedOut:
@@ -405,6 +517,11 @@ final class TunnelManager: ObservableObject {
         } catch {
             return false
         }
+    }
+
+    private func requestRiskConfirmation(message: String, operation: @escaping () -> Void) {
+        pendingRiskOperation = operation
+        riskWarning = TunnelRiskWarning(message: message)
     }
 
 }

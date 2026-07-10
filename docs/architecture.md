@@ -129,7 +129,7 @@ zip 包使用本机 ad-hoc 签名，不包含 Apple Developer ID notarization，
   sshHost
 ```
 
-该模式不会声明固定远端目标，连接目标由使用 SOCKS 代理的客户端决定。保存前会校验 SSH Host、本地 bind host 和端口，保存和启动前都会检查本地端口是否已被占用。
+该模式不会声明固定远端目标，连接目标由使用 SOCKS 代理的客户端决定。保存前会校验 SSH Host、本地 bind host 和端口，保存和启动前都会检查本地端口是否已被占用。非回环本地 bind host 会在保存或启动前触发风险确认，避免用户无意中暴露 SOCKS 监听。
 
 脱敏配置示例：
 
@@ -163,7 +163,7 @@ SSH Config 模式只保存 `sshConfigName`，由 `~/.ssh/config` 中的 Host 条
 ssh -G sshConfigName
 ```
 
-应用会解析输出，要求至少存在一条 `localforward`。`ssh -G` 校验有 10 秒超时，避免带 `Match exec`、`ProxyJump` 或慢 DNS 的配置被过早误判。
+应用会解析输出，要求至少存在一条 `localforward`，并检查其本地绑定地址。非回环绑定会在保存或启动前触发风险确认。`ssh -G` 校验有 10 秒超时，避免带 `Match exec`、`ProxyJump` 或慢 DNS 的配置被过早误判。
 
 ## 运行时状态
 
@@ -210,7 +210,9 @@ SSH Config 模式不解析具体端口，因此运行中按应用进程状态显
 
 - `sshHost` 和 `sshConfigName` 不能为空，不能包含空白、控制字符、明显 shell 元字符，也不能以 `-` 开头，避免被 OpenSSH 当作选项。
 - 手动转发端点和动态 SOCKS bind host 不允许裸 IPv6，IPv6 必须使用 `[::1]` 形式。
-- 本地 bind host 允许精确 `*`，远端 host 不允许通配符。
+- 本地 bind host 仍允许精确 `*` 以兼容需要局域网访问的场景，但非回环绑定在保存或启动前必须经过明确确认；远端 host 不允许通配符。
+- `127.0.0.1`、`localhost`、`::1` 和 `[::1]` 按回环地址处理；其他本地绑定地址都按可能暴露处理，不进行 DNS 解析。
+- SSH Config 模式会检查 `ssh -G` 解析出的 `LocalForward` 本地绑定地址，并使用相同的风险确认。
 - `openURL` 只允许带 host 的 `http` 或 `https` URL。
 - 端口必须在 `1...65535` 范围内。
 

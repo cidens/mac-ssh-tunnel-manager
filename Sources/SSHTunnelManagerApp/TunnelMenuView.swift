@@ -7,22 +7,67 @@ struct TunnelMenuView: View {
     @State private var isAdding = false
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 14) {
-            header
-            Divider()
+        ZStack {
+            VStack(alignment: .leading, spacing: 14) {
+                header
+                Divider()
 
-            if manager.tunnels.isEmpty {
-                if !isAdding {
-                    emptyState
+                if manager.tunnels.isEmpty {
+                    if !isAdding {
+                        emptyState
+                    }
+                } else {
+                    tunnelList
                 }
-            } else {
-                tunnelList
+
+                Divider()
+                addSection
             }
 
-            Divider()
-            addSection
+            if let warning = manager.riskWarning {
+                riskWarningOverlay(warning)
+            }
         }
         .padding(16)
+    }
+
+    private func riskWarningOverlay(_ warning: TunnelRiskWarning) -> some View {
+        ZStack {
+            Color.black.opacity(0.12)
+                .ignoresSafeArea()
+
+            VStack(alignment: .leading, spacing: 12) {
+                Text(AppStrings.riskyLocalBindTitle())
+                    .font(.headline)
+                Text(warning.message)
+                    .font(.callout)
+                    .fixedSize(horizontal: false, vertical: true)
+
+                HStack(spacing: 10) {
+                    Spacer()
+                    Button(AppStrings.cancel()) {
+                        manager.cancelRiskyOperation()
+                    }
+                    Button(AppStrings.continueAnyway()) {
+                        manager.confirmRiskyOperation()
+                    }
+                    .buttonStyle(.borderedProminent)
+                    .tint(.red)
+                }
+            }
+            .padding(16)
+            .frame(maxWidth: 420, alignment: .leading)
+            .background(.regularMaterial)
+            .clipShape(RoundedRectangle(cornerRadius: 12))
+            .overlay {
+                RoundedRectangle(cornerRadius: 12)
+                    .stroke(.quaternary)
+            }
+            .shadow(radius: 12)
+            .padding(16)
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .zIndex(10)
     }
 
     private var header: some View {
@@ -104,7 +149,7 @@ struct TunnelMenuView: View {
 
             if isAdding {
                 TunnelFormView(draft: $draft) {
-                    if manager.addTunnel(draft) {
+                    manager.addTunnel(draft) {
                         draft = TunnelDraft()
                         isAdding = false
                     }
@@ -192,10 +237,10 @@ struct TunnelRowView: View {
                         isEditing = false
                     }
                 ) {
-                    if manager.updateTunnel(tunnel, with: editDraft) {
+                    if !manager.updateTunnel(tunnel, with: editDraft, onSuccess: {
                         editError = ""
                         isEditing = false
-                    } else {
+                    }) {
                         editError = manager.addError
                     }
                 }

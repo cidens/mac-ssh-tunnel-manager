@@ -27,6 +27,18 @@ Fix options:
 - Choose another local port.
 - Confirm that multiple `SSH Tunnel Manager.app` instances are not running at the same time.
 
+## The App Warns That A Local Listener May Be Exposed
+
+When Local Forward, Dynamic SOCKS, or an SSH Config `LocalForward` uses a non-loopback bind address, the app asks for confirmation before saving or starting.
+
+The default recommendation is:
+
+```text
+127.0.0.1
+```
+
+If you continue, other devices on the LAN may access a fixed forwarded service. In Dynamic SOCKS mode, they may also use the listener as a proxy. Use `*`, `0.0.0.0`, or another non-loopback address only when LAN access is intentional.
+
 ## Command-Line Tools Do Not Automatically Use SOCKS
 
 Dynamic SOCKS mode only starts a local SOCKS listener. It does not modify system proxy settings, browser proxy settings, or command-line tool configuration. Commands that should use SOCKS must explicitly opt into the proxy:

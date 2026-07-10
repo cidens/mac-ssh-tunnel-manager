@@ -17,7 +17,7 @@ struct SystemSSHConfigResolver: SSHConfigResolving {
         process.executableURL = URL(fileURLWithPath: "/usr/bin/ssh")
         process.arguments = ["-G", name]
         process.standardOutput = output
-        process.standardError = Pipe()
+        process.standardError = FileHandle.nullDevice
 
         do {
             try process.run()
