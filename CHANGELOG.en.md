@@ -4,6 +4,12 @@
 
 This project follows the basic Semantic Versioning convention: patch releases for fixes, minor releases for backward-compatible features, and major releases for breaking changes.
 
+## 0.2.1
+
+- Adds explicit risk confirmation for non-loopback local bind addresses in Local Forward, Dynamic SOCKS, and SSH Config `LocalForward` entries.
+- Fixes a potential block or timeout caused by leaving the SSH Config validation stderr pipe unread.
+- Adds tests for non-loopback bind confirmation, SSH Config parsing, and related localization.
+
 ## 0.2.0
 
 Initial public release.
