@@ -258,7 +258,7 @@ Recommended manual flow:
 6. Stop the tunnel and confirm the app only stops SSH processes it started.
 7. Add an SSH Config tunnel and confirm nonexistent config names or configs without `LocalForward` are rejected.
 8. Start a valid SSH Config tunnel and confirm `openURL` works.
-9. Edit and delete tunnel configs and confirm the JSON file updates.
+9. Edit a tunnel and confirm the JSON file updates. Start deleting it and cancel to confirm the configuration remains, then confirm deletion and verify it is removed from the JSON file.
 10. Launch the app with English and Simplified Chinese system languages and confirm menus, forms, buttons, status summaries, and app-generated errors follow the system language.
 
 ## Current Boundaries

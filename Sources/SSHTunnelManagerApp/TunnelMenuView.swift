@@ -7,6 +7,7 @@ struct TunnelMenuView: View {
     @State private var draft = TunnelDraft()
     @State private var isAdding = false
     @State private var isShowingSettings = false
+    @State private var tunnelPendingDeletion: TunnelConfig?
 
     var body: some View {
         ZStack {
@@ -32,12 +33,57 @@ struct TunnelMenuView: View {
             if let warning = manager.riskWarning {
                 riskWarningOverlay(warning)
             }
+
+            if let tunnel = tunnelPendingDeletion {
+                deleteConfirmationOverlay(tunnel)
+            }
         }
         .padding(16)
         .sheet(isPresented: $isShowingSettings) {
             GlobalShortcutSettingsView()
                 .environmentObject(shortcutController)
         }
+    }
+
+    private func deleteConfirmationOverlay(_ tunnel: TunnelConfig) -> some View {
+        ZStack {
+            Color.black.opacity(0.12)
+                .ignoresSafeArea()
+
+            VStack(alignment: .leading, spacing: 12) {
+                Text(AppStrings.deleteTunnelConfirmationTitle())
+                    .font(.headline)
+                Text(AppStrings.deleteTunnelConfirmationMessage(name: tunnel.name))
+                    .font(.callout)
+                    .fixedSize(horizontal: false, vertical: true)
+
+                HStack(spacing: 10) {
+                    Spacer()
+                    Button(AppStrings.cancel()) {
+                        tunnelPendingDeletion = nil
+                    }
+                    .keyboardShortcut(.cancelAction)
+                    Button(AppStrings.delete(), role: .destructive) {
+                        tunnelPendingDeletion = nil
+                        manager.deleteTunnel(tunnel)
+                    }
+                    .buttonStyle(.borderedProminent)
+                    .tint(.red)
+                }
+            }
+            .padding(16)
+            .frame(maxWidth: 420, alignment: .leading)
+            .background(.regularMaterial)
+            .clipShape(RoundedRectangle(cornerRadius: 12))
+            .overlay {
+                RoundedRectangle(cornerRadius: 12)
+                    .stroke(.quaternary)
+            }
+            .shadow(radius: 12)
+            .padding(16)
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .zIndex(20)
     }
 
     private func riskWarningOverlay(_ warning: TunnelRiskWarning) -> some View {
@@ -130,7 +176,7 @@ struct TunnelMenuView: View {
     private var tunnelList: some View {
         LazyVStack(spacing: 10) {
             ForEach(manager.tunnels) { tunnel in
-                TunnelRowView(tunnel: tunnel)
+                TunnelRowView(tunnel: tunnel) { tunnelPendingDeletion = $0 }
                     .environmentObject(manager)
             }
         }
@@ -182,6 +228,7 @@ struct TunnelMenuView: View {
 struct TunnelRowView: View {
     @EnvironmentObject private var manager: TunnelManager
     let tunnel: TunnelConfig
+    let onDeleteRequest: (TunnelConfig) -> Void
     @State private var isEditing = false
     @State private var editDraft = TunnelDraft()
     @State private var editError = ""
@@ -232,7 +279,7 @@ struct TunnelRowView: View {
                 Spacer()
 
                 Button(role: .destructive) {
-                    manager.deleteTunnel(tunnel)
+                    onDeleteRequest(tunnel)
                 } label: {
                     Image(systemName: "trash")
                 }

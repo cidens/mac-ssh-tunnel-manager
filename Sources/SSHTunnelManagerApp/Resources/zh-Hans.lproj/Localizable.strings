@@ -39,6 +39,9 @@
 "button.edit" = "编辑";
 "button.collapseEdit" = "收起编辑";
 "help.deleteTunnel" = "删除隧道配置";
+"delete.confirmation.title" = "删除隧道配置？";
+"delete.confirmation.message" = "“%@”的配置将被永久删除，且无法撤销。如果隧道正在运行，连接也会先停止。";
+"button.delete" = "删除";
 "button.save" = "保存";
 "button.update" = "更新";
 "button.cancel" = "取消";

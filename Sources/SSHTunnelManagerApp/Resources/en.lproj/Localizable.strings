@@ -39,6 +39,9 @@
 "button.edit" = "Edit";
 "button.collapseEdit" = "Collapse Edit";
 "help.deleteTunnel" = "Delete tunnel config";
+"delete.confirmation.title" = "Delete tunnel configuration?";
+"delete.confirmation.message" = "The configuration for “%@” will be permanently deleted and cannot be undone. If the tunnel is running, its connection will be stopped first.";
+"button.delete" = "Delete";
 "button.save" = "Save";
 "button.update" = "Update";
 "button.cancel" = "Cancel";

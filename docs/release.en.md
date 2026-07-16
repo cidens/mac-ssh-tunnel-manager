@@ -67,4 +67,4 @@ A GitHub Release should include:
 1. Download the zip from the Release.
 2. Unzip and launch the app.
 3. Check the basic menu UI under English and Simplified Chinese system languages.
-4. Add a sanitized test tunnel and confirm save, edit, and delete flows work.
+4. Add a sanitized test tunnel and confirm save and edit work. Start deleting it and cancel to confirm it remains, then confirm deletion and verify it is removed.

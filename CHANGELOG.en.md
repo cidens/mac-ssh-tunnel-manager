@@ -4,6 +4,10 @@
 
 This project follows the basic Semantic Versioning convention: patch releases for fixes, minor releases for backward-compatible features, and major releases for breaking changes.
 
+## Unreleased
+
+- Adds confirmation before deleting a tunnel configuration, explains that deletion cannot be undone, and warns that a running tunnel will be stopped first.
+
 ## 0.3.0
 
 - Adds a customizable global shortcut, using `⌃⌥⌘T` by default. Triggering it shows and brings the main panel to the front; triggering it again closes the panel.

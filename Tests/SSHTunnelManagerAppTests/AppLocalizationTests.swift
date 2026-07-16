@@ -12,6 +12,20 @@ import Testing
     #expect(AppStrings.riskyLocalBindTitle(language: "zh-Hans") == "本地监听可能暴露")
     #expect(AppStrings.shortcutSettingsTitle(language: "en") == "Global Shortcut")
     #expect(AppStrings.shortcutSettingsTitle(language: "zh-Hans") == "全局快捷键")
+    #expect(AppStrings.deleteTunnelConfirmationTitle(language: "en") == "Delete tunnel configuration?")
+    #expect(AppStrings.deleteTunnelConfirmationTitle(language: "zh-Hans") == "删除隧道配置？")
+}
+
+@Test func deleteTunnelConfirmationNamesTheTunnelAndExplainsTheConsequence() {
+    let english = AppStrings.deleteTunnelConfirmationMessage(name: "Example Service", language: "en")
+    let chinese = AppStrings.deleteTunnelConfirmationMessage(name: "示例服务", language: "zh-Hans")
+
+    #expect(english.contains("Example Service"))
+    #expect(english.contains("cannot be undone"))
+    #expect(english.contains("stopped first"))
+    #expect(chinese.contains("示例服务"))
+    #expect(chinese.contains("无法撤销"))
+    #expect(chinese.contains("先停止"))
 }
 
 @Test func globalShortcutFormatterDisplaysDefaultShortcut() {
@@ -48,4 +62,5 @@ import Testing
     #expect(englishKeys == chineseKeys)
     #expect(englishKeys.contains("button.addTunnel"))
     #expect(englishKeys.contains("shortcut.settings.title"))
+    #expect(englishKeys.contains("delete.confirmation.message"))
 }

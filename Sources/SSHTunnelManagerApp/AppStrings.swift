@@ -246,6 +246,18 @@ enum AppStrings {
         string("help.deleteTunnel", language: language)
     }
 
+    static func deleteTunnelConfirmationTitle(language: String? = nil) -> String {
+        string("delete.confirmation.title", language: language)
+    }
+
+    static func deleteTunnelConfirmationMessage(name: String, language: String? = nil) -> String {
+        format("delete.confirmation.message", language: language, name)
+    }
+
+    static func delete(language: String? = nil) -> String {
+        string("button.delete", language: language)
+    }
+
     static func save(language: String? = nil) -> String {
         string("button.save", language: language)
     }
