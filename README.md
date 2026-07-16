@@ -4,13 +4,14 @@
 
 用于管理 SSH 本地端口转发和动态 SOCKS 隧道的 macOS 菜单栏应用。
 
-当前版本：`0.2.1`
+当前版本：`0.3.0`
 
 应用名称为 `SSH Tunnel Manager`，SwiftPM executable target 为 `ssh-tunnel-manager`。
 
-应用第一版保持轻量：
+应用保持轻量：
 
-- 使用 SwiftUI `MenuBarExtra` 运行在菜单栏。
+- 使用 AppKit 状态栏项目和 SwiftUI 主界面运行在菜单栏，不显示 Dock 图标。
+- 默认启用全局快捷键 `⌃⌥⌘T`，菜单栏图标被隐藏时仍可展示并置前主界面。
 - 启动隧道时直接调用 `/usr/bin/ssh`，不经过 shell 字符串拼接。
 - 复用系统已有的 `~/.ssh/config`、ssh-agent 和 macOS Keychain 行为。
 - 隧道配置以 JSON 保存在本机。
@@ -73,7 +74,7 @@ open -a 'SSH Tunnel Manager'
 产物会输出到：
 
 ```text
-dist/SSH Tunnel Manager-0.2.1.zip
+dist/SSH Tunnel Manager-0.3.0.zip
 ```
 
 对方解压后，把 `SSH Tunnel Manager.app` 拖到 `/Applications`，再从 Finder、Spotlight 或 Launchpad 打开。
@@ -89,6 +90,9 @@ swift test
 ## 文档
 
 - [架构说明](docs/architecture.md)
+- [全局快捷键备用入口需求](docs/requirements-global-shortcut.md)
+- [全局快捷键备用入口技术设计](docs/design-global-shortcut.md)
+- [全局快捷键备用入口验收记录](docs/validation-global-shortcut.md)
 - [分发说明](docs/distribution.md)
 - [隐私说明](docs/privacy.md)
 - [排障手册](docs/troubleshooting.md)
@@ -106,6 +110,12 @@ swift test
 ~/Library/Application Support/ssh-tunnel-manager/tunnels.json
 ```
 
+全局快捷键设置独立保存到：
+
+```text
+~/Library/Application Support/ssh-tunnel-manager/settings.json
+```
+
 每条隧道保存以下字段：
 
 - `name`
@@ -119,6 +129,25 @@ swift test
 - `openURL`
 
 首次启动时列表为空，需要在菜单栏界面中手动添加隧道。
+
+## 全局快捷键
+
+应用运行时，按 `⌃⌥⌘T` 可以展示并置前主界面；主界面已经显示时再次按下快捷键会将其关闭。
+
+点击主界面顶部的齿轮按钮可以：
+
+- 启用或停用全局快捷键。
+- 录制自定义组合键。
+- 恢复默认组合 `⌃⌥⌘T`。
+- 查看当前注册状态并在失败后重试。
+
+保存前应用会检查已启用的 macOS 系统级快捷键，并尝试独占注册候选组合。已确认冲突会阻止保存，旧快捷键继续有效。macOS 不能完整枚举其他应用内部或非独占的快捷键，因此冲突检测不能覆盖所有第三方应用。
+
+全局快捷键只能在应用运行时使用。如果快捷键注册失败且菜单栏图标不可见，可以再次从 Finder、Spotlight、Launchpad 打开应用，或运行：
+
+```bash
+open -a 'SSH Tunnel Manager'
+```
 
 ## 使用方式
 

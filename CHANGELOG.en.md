@@ -4,6 +4,13 @@
 
 This project follows the basic Semantic Versioning convention: patch releases for fixes, minor releases for backward-compatible features, and major releases for breaking changes.
 
+## 0.3.0
+
+- Adds a customizable global shortcut, using `⌃⌥⌘T` by default. Triggering it shows and brings the main panel to the front; triggering it again closes the panel.
+- Adds shortcut recording, enable or disable controls, default restoration, and settings in English and Simplified Chinese. Conflicts recognizable by the system are checked before saving, and failed saves preserve the previous settings.
+- Changes the menu bar entry to an icon-only item with a tooltip, reducing menu bar space usage.
+- Makes the tunnel list independently scrollable while keeping “Add Tunnel” and “Quit” fixed at the bottom of the panel.
+
 ## 0.2.1
 
 - Adds explicit risk confirmation for non-loopback local bind addresses in Local Forward, Dynamic SOCKS, and SSH Config `LocalForward` entries.

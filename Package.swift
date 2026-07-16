@@ -20,7 +20,10 @@ let package = Package(
         .executableTarget(
             name: "SSHTunnelManagerApp",
             dependencies: ["SSHTunnelCore"],
-            resources: [.process("Resources")]
+            resources: [.process("Resources")],
+            linkerSettings: [
+                .linkedFramework("Carbon")
+            ]
         ),
         .testTarget(
             name: "SSHTunnelCoreTests",

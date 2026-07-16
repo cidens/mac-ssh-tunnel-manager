@@ -96,6 +96,108 @@ enum AppStrings {
         string("help.refresh", language: language)
     }
 
+    static func settings(language: String? = nil) -> String {
+        string("button.settings", language: language)
+    }
+
+    static func settingsHelp(language: String? = nil) -> String {
+        string("help.settings", language: language)
+    }
+
+    static func shortcutSettingsTitle(language: String? = nil) -> String {
+        string("shortcut.settings.title", language: language)
+    }
+
+    static func shortcutEnabled(language: String? = nil) -> String {
+        string("shortcut.enabled", language: language)
+    }
+
+    static func shortcutLabel(language: String? = nil) -> String {
+        string("shortcut.label", language: language)
+    }
+
+    static func shortcutRecord(language: String? = nil) -> String {
+        string("shortcut.record", language: language)
+    }
+
+    static func shortcutRecording(language: String? = nil) -> String {
+        string("shortcut.recording", language: language)
+    }
+
+    static func shortcutRetry(language: String? = nil) -> String {
+        string("shortcut.retry", language: language)
+    }
+
+    static func shortcutRestoreDefault(language: String? = nil) -> String {
+        string("shortcut.restoreDefault", language: language)
+    }
+
+    static func shortcutStatusLabel(language: String? = nil) -> String {
+        string("shortcut.status.label", language: language)
+    }
+
+    static func shortcutStatusActive(language: String? = nil) -> String {
+        string("shortcut.status.active", language: language)
+    }
+
+    static func shortcutStatusDisabled(language: String? = nil) -> String {
+        string("shortcut.status.disabled", language: language)
+    }
+
+    static func shortcutStatusConflict(language: String? = nil) -> String {
+        string("shortcut.status.conflict", language: language)
+    }
+
+    static func shortcutStatusFailed(language: String? = nil) -> String {
+        string("shortcut.status.failed", language: language)
+    }
+
+    static func shortcutLimitation(language: String? = nil) -> String {
+        string("shortcut.limitation", language: language)
+    }
+
+    static func shortcutInvalid(language: String? = nil) -> String {
+        string("shortcut.error.invalid", language: language)
+    }
+
+    static func shortcutInvalidStoredSettings(language: String? = nil) -> String {
+        string("shortcut.error.invalidStoredSettings", language: language)
+    }
+
+    static func shortcutValidationError(
+        _ error: GlobalShortcutValidationError,
+        language: String? = nil
+    ) -> String {
+        switch error {
+        case .missingPrimaryKey:
+            string("shortcut.error.missingPrimaryKey", language: language)
+        case .missingRequiredModifier:
+            string("shortcut.error.missingModifier", language: language)
+        case .unsupportedKey:
+            string("shortcut.error.unsupportedKey", language: language)
+        }
+    }
+
+    static func shortcutIssue(
+        _ issue: GlobalShortcutIssue,
+        shortcut: GlobalShortcut,
+        language: String? = nil
+    ) -> String {
+        let shortcutText = GlobalShortcutFormatter.displayText(for: shortcut)
+        switch issue {
+        case let .invalidShortcut(error):
+            return shortcutValidationError(error, language: language)
+        case .systemConflict:
+            return format("shortcut.error.conflict", language: language, shortcutText)
+        case let .systemQueryFailed(code):
+            return format("shortcut.error.queryFailed", language: language, code)
+        case let .registrationFailed(code):
+            return format("shortcut.error.registrationFailed", language: language, shortcutText, code)
+        case .persistenceFailed:
+            return string("shortcut.error.persistenceFailed", language: language)
+        }
+    }
+
     static func emptyStateTitle(language: String? = nil) -> String {
         string("empty.title", language: language)
     }

@@ -28,7 +28,7 @@
 产物路径示例：
 
 ```text
-dist/SSH Tunnel Manager-0.2.1.zip
+dist/SSH Tunnel Manager-0.3.0.zip
 ```
 
 `dist/` 是构建产物目录，不提交到 Git。
@@ -37,7 +37,7 @@ dist/SSH Tunnel Manager-0.2.1.zip
 
 把 zip 文件发给用户后，用户按以下方式安装：
 
-1. 解压 `SSH Tunnel Manager-0.2.1.zip`。
+1. 解压 `SSH Tunnel Manager-0.3.0.zip`。
 2. 把 `SSH Tunnel Manager.app` 拖到 `/Applications`。
 3. 从 Finder、Spotlight 或 Launchpad 打开应用。
 4. 根据自己的 `~/.ssh/config` 添加隧道配置。

@@ -3,8 +3,10 @@ import SSHTunnelCore
 
 struct TunnelMenuView: View {
     @EnvironmentObject private var manager: TunnelManager
+    @EnvironmentObject private var shortcutController: GlobalShortcutController
     @State private var draft = TunnelDraft()
     @State private var isAdding = false
+    @State private var isShowingSettings = false
 
     var body: some View {
         ZStack {
@@ -12,13 +14,16 @@ struct TunnelMenuView: View {
                 header
                 Divider()
 
-                if manager.tunnels.isEmpty {
-                    if !isAdding {
-                        emptyState
+                ScrollView {
+                    if manager.tunnels.isEmpty {
+                        if !isAdding {
+                            emptyState
+                        }
+                    } else {
+                        tunnelList
                     }
-                } else {
-                    tunnelList
                 }
+                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
 
                 Divider()
                 addSection
@@ -29,6 +34,10 @@ struct TunnelMenuView: View {
             }
         }
         .padding(16)
+        .sheet(isPresented: $isShowingSettings) {
+            GlobalShortcutSettingsView()
+                .environmentObject(shortcutController)
+        }
     }
 
     private func riskWarningOverlay(_ warning: TunnelRiskWarning) -> some View {
@@ -90,6 +99,13 @@ struct TunnelMenuView: View {
                 .foregroundStyle(.secondary)
                 .lineLimit(1)
             Button {
+                isShowingSettings = true
+            } label: {
+                Label(AppStrings.settings(), systemImage: "gearshape")
+            }
+            .labelStyle(.iconOnly)
+            .help(AppStrings.settingsHelp())
+            Button {
                 manager.refreshStatuses()
             } label: {
                 Label(AppStrings.refresh(), systemImage: "arrow.clockwise")
@@ -112,15 +128,12 @@ struct TunnelMenuView: View {
     }
 
     private var tunnelList: some View {
-        ScrollView {
-            VStack(spacing: 10) {
-                ForEach(manager.tunnels) { tunnel in
-                    TunnelRowView(tunnel: tunnel)
-                        .environmentObject(manager)
-                }
+        LazyVStack(spacing: 10) {
+            ForEach(manager.tunnels) { tunnel in
+                TunnelRowView(tunnel: tunnel)
+                    .environmentObject(manager)
             }
         }
-        .frame(maxHeight: 280)
     }
 
     private var addSection: some View {

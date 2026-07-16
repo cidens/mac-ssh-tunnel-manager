@@ -6,7 +6,7 @@ English | [中文](architecture.md)
 
 `mac-ssh-tunnel-manager` is the public repository name. The app name is `SSH Tunnel Manager`; the SwiftPM executable target remains `ssh-tunnel-manager`. It is a personal macOS menu bar app for managing SSH local port forwarding and dynamic SOCKS tunnels. It does not implement the SSH protocol and does not store server passwords or private keys. Instead, it starts the system `/usr/bin/ssh` binary directly and reuses the user's existing `~/.ssh/config`, ssh-agent, and macOS Keychain behavior.
 
-Current version: `0.2.1`. The version is defined in `SSHTunnelCore/AppVersion.swift`.
+Current version: `0.3.0`. The version is defined in `SSHTunnelCore/AppVersion.swift`.
 
 ## Module Layout
 
@@ -76,7 +76,7 @@ For small trusted distribution:
 The package script writes:
 
 ```text
-dist/SSH Tunnel Manager-0.2.1.zip
+dist/SSH Tunnel Manager-0.3.0.zip
 ```
 
 The zip uses local ad-hoc signing and is not notarized with an Apple Developer ID. Public distribution should add Developer ID signing and notarization later.

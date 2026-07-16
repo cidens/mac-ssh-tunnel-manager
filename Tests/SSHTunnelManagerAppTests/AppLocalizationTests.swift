@@ -10,6 +10,24 @@ import Testing
     #expect(AppStrings.modeDynamicForward(language: "zh-Hans") == "动态 SOCKS")
     #expect(AppStrings.riskyLocalBindTitle(language: "en") == "Local listener may be exposed")
     #expect(AppStrings.riskyLocalBindTitle(language: "zh-Hans") == "本地监听可能暴露")
+    #expect(AppStrings.shortcutSettingsTitle(language: "en") == "Global Shortcut")
+    #expect(AppStrings.shortcutSettingsTitle(language: "zh-Hans") == "全局快捷键")
+}
+
+@Test func globalShortcutFormatterDisplaysDefaultShortcut() {
+    #expect(GlobalShortcutFormatter.displayText(for: .defaultShortcut) == "⌃⌥⌘T")
+    #expect(GlobalShortcutFormatter.accessibilityText(for: .defaultShortcut) == "Control Option Command T")
+}
+
+@Test func shortcutConflictMessageExplainsRollbackInEnglishAndChinese() {
+    #expect(
+        AppStrings.string("shortcut.error.conflict", language: "en")
+            .contains("previous shortcut remains active")
+    )
+    #expect(
+        AppStrings.string("shortcut.error.conflict", language: "zh-Hans")
+            .contains("原快捷键仍然有效")
+    )
 }
 
 @Test func appStringsFormatRuntimeErrorsInEnglishAndChinese() {
@@ -29,4 +47,5 @@ import Testing
 
     #expect(englishKeys == chineseKeys)
     #expect(englishKeys.contains("button.addTunnel"))
+    #expect(englishKeys.contains("shortcut.settings.title"))
 }
