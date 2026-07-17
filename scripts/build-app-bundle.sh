@@ -12,7 +12,7 @@ APP_VERSION="$(
   sed -n 's/.*public static let current = "\(.*\)".*/\1/p' \
     "${ROOT_DIR}/Sources/SSHTunnelCore/AppVersion.swift" | head -n 1
 )"
-APP_VERSION="${APP_VERSION:-0.3.1}"
+APP_VERSION="${APP_VERSION:-0.3.2}"
 
 if [[ $# -ne 1 ]]; then
   echo "Usage: $0 <output-app-path>" >&2
@@ -41,7 +41,7 @@ mkdir -p "${APP_MACOS}" "${APP_RESOURCES}"
 cp "${BIN_PATH}" "${APP_MACOS}/${PRODUCT_NAME}"
 chmod 755 "${APP_MACOS}/${PRODUCT_NAME}"
 
-echo "Copying localized resources..."
+echo "Copying SwiftPM resource bundles to Contents/Resources..."
 shopt -s nullglob
 RESOURCE_BUNDLES=("${BIN_DIR}/${PRODUCT_NAME}_"*.bundle)
 if [[ ${#RESOURCE_BUNDLES[@]} -eq 0 ]]; then
@@ -49,7 +49,12 @@ if [[ ${#RESOURCE_BUNDLES[@]} -eq 0 ]]; then
   exit 1
 fi
 for resource_bundle in "${RESOURCE_BUNDLES[@]}"; do
+  resource_name="$(basename "${resource_bundle}")"
   cp -R "${resource_bundle}" "${APP_RESOURCES}/"
+  if [[ ! -f "${APP_RESOURCES}/${resource_name}/Info.plist" ]]; then
+    echo "Copied SwiftPM resource bundle is invalid: ${APP_RESOURCES}/${resource_name}" >&2
+    exit 1
+  fi
 done
 shopt -u nullglob
 

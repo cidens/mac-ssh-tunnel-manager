@@ -6,6 +6,10 @@ This project follows the basic Semantic Versioning convention: patch releases fo
 
 ## Unreleased
 
+## 0.3.2
+
+- Fixes distribution packages failing to load SwiftPM localization resources from the standard `Contents/Resources` directory, which caused the app to exit immediately away from the build machine, and validates the runtime resource layout during Release builds.
+
 ## 0.3.1
 
 - Adds confirmation before deleting a tunnel configuration, explains that deletion cannot be undone, and warns that a running tunnel will be stopped first.

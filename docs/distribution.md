@@ -20,7 +20,7 @@
 
 1. 使用 SwiftPM release 模式构建 `ssh-tunnel-manager`。
 2. 生成 `SSH Tunnel Manager.app`。
-3. 把 SwiftPM 生成的本地化 resource bundle 复制到 `.app/Contents/Resources`。
+3. 把 SwiftPM 生成的本地化 resource bundle 复制到标准的 `.app/Contents/Resources` 目录，并由应用的资源定位器加载。
 4. 写入 `Info.plist`，包含版本号、菜单栏应用标记、最低系统版本和 `en`、`zh-Hans` 本地化声明。
 5. 使用本机 ad-hoc 签名。
 6. 生成 zip 包到 `dist/`。
@@ -28,7 +28,7 @@
 产物路径示例：
 
 ```text
-dist/SSH Tunnel Manager-0.3.1.zip
+dist/SSH Tunnel Manager-0.3.2.zip
 ```
 
 `dist/` 是构建产物目录，不提交到 Git。
@@ -37,7 +37,7 @@ dist/SSH Tunnel Manager-0.3.1.zip
 
 把 zip 文件发给用户后，用户按以下方式安装：
 
-1. 解压 `SSH Tunnel Manager-0.3.1.zip`。
+1. 解压 `SSH Tunnel Manager-0.3.2.zip`。
 2. 把 `SSH Tunnel Manager.app` 拖到 `/Applications`。
 3. 从 Finder、Spotlight 或 Launchpad 打开应用。
 4. 根据自己的 `~/.ssh/config` 添加隧道配置。

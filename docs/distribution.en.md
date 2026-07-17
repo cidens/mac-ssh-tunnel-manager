@@ -20,7 +20,7 @@ The script:
 
 1. Builds `ssh-tunnel-manager` in SwiftPM release mode.
 2. Creates `SSH Tunnel Manager.app`.
-3. Copies SwiftPM-generated localized resource bundles into `.app/Contents/Resources`.
+3. Copies SwiftPM-generated localized resource bundles into the standard `.app/Contents/Resources` directory, where the app's resource locator loads them.
 4. Writes `Info.plist` with version metadata, menu bar app settings, minimum system version, and `en` plus `zh-Hans` localization declarations.
 5. Applies local ad-hoc signing.
 6. Creates a zip package under `dist/`.
@@ -28,7 +28,7 @@ The script:
 Example output:
 
 ```text
-dist/SSH Tunnel Manager-0.3.1.zip
+dist/SSH Tunnel Manager-0.3.2.zip
 ```
 
 `dist/` is a build output directory and should not be committed to Git.
@@ -37,7 +37,7 @@ dist/SSH Tunnel Manager-0.3.1.zip
 
 After receiving the zip package, users install it like this:
 
-1. Unzip `SSH Tunnel Manager-0.3.1.zip`.
+1. Unzip `SSH Tunnel Manager-0.3.2.zip`.
 2. Drag `SSH Tunnel Manager.app` to `/Applications`.
 3. Open the app from Finder, Spotlight, or Launchpad.
 4. Add tunnel definitions based on their own `~/.ssh/config`.

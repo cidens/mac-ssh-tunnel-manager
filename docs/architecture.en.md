@@ -6,7 +6,7 @@ English | [中文](architecture.md)
 
 `mac-ssh-tunnel-manager` is the public repository name. The app name is `SSH Tunnel Manager`; the SwiftPM executable target remains `ssh-tunnel-manager`. It is a personal macOS menu bar app for managing SSH local port forwarding and dynamic SOCKS tunnels. It does not implement the SSH protocol and does not store server passwords or private keys. Instead, it starts the system `/usr/bin/ssh` binary directly and reuses the user's existing `~/.ssh/config`, ssh-agent, and macOS Keychain behavior.
 
-Current version: `0.3.1`. The version is defined in `SSHTunnelCore/AppVersion.swift`.
+Current version: `0.3.2`. The version is defined in `SSHTunnelCore/AppVersion.swift`.
 
 ## Module Layout
 
@@ -33,7 +33,7 @@ Key file responsibilities:
 - `ManagedProcessTerminator.swift`: terminates app-managed processes and waits briefly for exit.
 - `TunnelSummary.swift`: summarizes running, failed, and total tunnel counts.
 - `TunnelManager.swift`: manages tunnel lists, runtime state, SSH `Process` lifecycle, and validation before saving.
-- `AppStrings.swift`: App-layer localization entry point for menu text, buttons, forms, help text, and app-generated errors.
+- `AppStrings.swift`: App-layer localization entry point for menu text, buttons, forms, help text, and app-generated errors; packaged apps load SwiftPM resource bundles from `Contents/Resources`, while development and tests fall back to `Bundle.module`.
 - `TunnelMenuView.swift`: menu bar UI for adding, editing, starting, stopping, opening URLs, and deleting tunnels.
 - `TunnelModeFormFields.swift`: centralizes which form fields each tunnel mode should display.
 - `scripts/build-app-bundle.sh`: builds the SwiftPM release product into a `.app`, writes `Info.plist`, and applies local ad-hoc signing.
@@ -58,7 +58,7 @@ The install script:
 
 1. Runs `swift build -c release --product ssh-tunnel-manager`.
 2. Creates a temporary `SSH Tunnel Manager.app` bundle.
-3. Copies SwiftPM-generated localized resource bundles into `.app/Contents/Resources`.
+3. Copies SwiftPM-generated localized resource bundles into the standard `.app/Contents/Resources` directory, where the app's resource locator loads them.
 4. Reads the current version from `AppVersion.swift` and writes it to `Info.plist`.
 5. Declares `CFBundleDevelopmentRegion=en` and `CFBundleLocalizations=en, zh-Hans`.
 6. Sets `LSUIElement=true` so the app runs as a menu bar utility without a Dock icon.
@@ -76,7 +76,7 @@ For small trusted distribution:
 The package script writes:
 
 ```text
-dist/SSH Tunnel Manager-0.3.1.zip
+dist/SSH Tunnel Manager-0.3.2.zip
 ```
 
 The zip uses local ad-hoc signing and is not notarized with an Apple Developer ID. Public distribution should add Developer ID signing and notarization later.

@@ -31,7 +31,7 @@ codesign --verify --deep --strict /private/tmp/SSH\ Tunnel\ Manager.app
 
 Confirm:
 
-- App/Core localization resource bundles exist.
+- App/Core localization resource bundles exist under `.app/Contents/Resources`.
 - `CFBundleDevelopmentRegion` is `en`.
 - `CFBundleLocalizations` includes `en` and `zh-Hans`.
 - Ad-hoc signing verification passes.

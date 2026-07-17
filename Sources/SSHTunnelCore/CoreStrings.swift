@@ -14,7 +14,7 @@ public enum CoreStrings {
         return NSLocalizedString(
             key,
             tableName: nil,
-            bundle: Bundle.module,
+            bundle: resourceBundle,
             value: defaultValue,
             comment: ""
         )
@@ -41,7 +41,7 @@ public enum CoreStrings {
 
     private static func stringsURL(language: String) -> URL? {
         let languageDirectory = "\(language).lproj"
-        if let url = Bundle.module.url(
+        if let url = resourceBundle.url(
             forResource: "Localizable",
             withExtension: "strings",
             subdirectory: languageDirectory
@@ -49,10 +49,19 @@ public enum CoreStrings {
             return url
         }
 
-        return Bundle.module.urls(forResourcesWithExtension: "strings", subdirectory: nil)?
+        return resourceBundle.urls(forResourcesWithExtension: "strings", subdirectory: nil)?
             .first { url in
                 url.lastPathComponent == "Localizable.strings"
                     && url.deletingLastPathComponent().lastPathComponent.lowercased() == languageDirectory.lowercased()
             }
     }
+
+    private static let resourceBundle: Bundle = {
+        let bundleName = "ssh-tunnel-manager_SSHTunnelCore.bundle"
+        if let resourceURL = Bundle.main.resourceURL?.appendingPathComponent(bundleName),
+           let bundle = Bundle(url: resourceURL) {
+            return bundle
+        }
+        return Bundle.module
+    }()
 }
