@@ -68,7 +68,10 @@ jobs:
           verify_dir="$(mktemp -d "${RUNNER_TEMP}/ssh-tunnel-manager-release.XXXXXX")"
           trap 'rm -rf "${verify_dir}"' EXIT
           ditto -x -k "${asset}" "${verify_dir}"
-          codesign --verify --deep --strict "${verify_dir}/SSH Tunnel Manager.app"
+          app_bundle="${verify_dir}/SSH Tunnel Manager.app"
+          test -f "${app_bundle}/Contents/Resources/ssh-tunnel-manager_SSHTunnelManagerApp.bundle/Info.plist"
+          test -f "${app_bundle}/Contents/Resources/ssh-tunnel-manager_SSHTunnelCore.bundle/Info.plist"
+          codesign --verify --deep --strict "${app_bundle}"
           shasum -a 256 "${asset}" > "${asset}.sha256"
 
       - name: Publish or update GitHub Release

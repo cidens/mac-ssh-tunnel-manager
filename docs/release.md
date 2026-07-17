@@ -31,7 +31,7 @@ codesign --verify --deep --strict /private/tmp/SSH\ Tunnel\ Manager.app
 
 确认：
 
-- App/Core 的本地化 resource bundle 存在。
+- App/Core 的本地化 resource bundle 存在于 `.app/Contents/Resources`。
 - `CFBundleDevelopmentRegion` 为 `en`。
 - `CFBundleLocalizations` 包含 `en` 和 `zh-Hans`。
 - ad-hoc 签名验证通过。

@@ -6,7 +6,7 @@
 
 `mac-ssh-tunnel-manager` 是公开仓库名。应用名称为 `SSH Tunnel Manager`，SwiftPM executable target 为 `ssh-tunnel-manager`。它是一个个人使用的 macOS 菜单栏应用，用 GUI 管理 SSH 本地端口转发和动态 SOCKS 隧道。应用不实现 SSH 协议，也不保存服务器密码或私钥，而是直接调用系统 `/usr/bin/ssh`，复用用户已有的 `~/.ssh/config`、ssh-agent 和 macOS Keychain。
 
-当前版本为 `0.3.1`，版本号定义在 `SSHTunnelCore/AppVersion.swift`。
+当前版本为 `0.3.2`，版本号定义在 `SSHTunnelCore/AppVersion.swift`。
 
 ## 模块结构
 
@@ -40,7 +40,7 @@
 - `GlobalShortcutSystem.swift`：封装 macOS 快捷键注册、注销、事件回调和系统快捷键查询。
 - `GlobalShortcutController.swift`：管理启动恢复、录制状态、冲突分类和保存回滚事务。
 - `GlobalShortcutSettingsView.swift`、`ShortcutRecorderView.swift`：提供快捷键设置和聚焦录制界面。
-- `AppStrings.swift`：App 层本地化入口，负责菜单、按钮、表单、提示和应用生成的错误文案。
+- `AppStrings.swift`：App 层本地化入口，负责菜单、按钮、表单、提示和应用生成的错误文案；安装包运行时从 `Contents/Resources` 加载 SwiftPM resource bundle，开发和测试环境回退到 `Bundle.module`。
 - `TunnelMenuView.swift`：菜单栏窗口 UI，包括添加、编辑、启动、停止、打开 URL 和删除。
 - `TunnelModeFormFields.swift`：集中定义不同隧道模式在表单中应显示的字段。
 - `scripts/build-app-bundle.sh`：把 SwiftPM release 构建打包成 `.app`，写入 `Info.plist` 并做本机 ad-hoc 签名。
@@ -65,7 +65,7 @@ swift run ssh-tunnel-manager
 
 1. 执行 `swift build -c release --product ssh-tunnel-manager`。
 2. 创建临时的 `SSH Tunnel Manager.app` 目录结构。
-3. 把 SwiftPM 生成的本地化 resource bundle 复制到 `.app/Contents/Resources`。
+3. 把 SwiftPM 生成的本地化 resource bundle 复制到标准的 `.app/Contents/Resources` 目录，由应用的资源定位器加载。
 4. 从 `AppVersion.swift` 读取当前版本号，写入 `Info.plist`。
 5. 声明 `CFBundleDevelopmentRegion=en` 和 `CFBundleLocalizations=en, zh-Hans`。
 6. 设置 `LSUIElement=true`，让应用以菜单栏工具方式运行，不显示 Dock 图标。
@@ -83,7 +83,7 @@ swift run ssh-tunnel-manager
 脚本会生成：
 
 ```text
-dist/SSH Tunnel Manager-0.3.1.zip
+dist/SSH Tunnel Manager-0.3.2.zip
 ```
 
 zip 包使用本机 ad-hoc 签名，不包含 Apple Developer ID notarization，适合可信用户小范围分发。正式公开分发需要后续接入 Developer ID 签名和 notarization。
