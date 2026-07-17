@@ -4,7 +4,7 @@ English | [中文](README.md)
 
 A lightweight macOS menu bar app for managing SSH local port forwarding and dynamic SOCKS tunnels.
 
-Current version: `0.3.0`
+Current version: `0.3.1`
 
 The app name is `SSH Tunnel Manager`; the SwiftPM executable target remains `ssh-tunnel-manager`.
 
@@ -72,7 +72,7 @@ For small trusted distribution:
 The zip package is written to:
 
 ```text
-dist/SSH Tunnel Manager-0.3.0.zip
+dist/SSH Tunnel Manager-0.3.1.zip
 ```
 
 The generated app is ad-hoc signed and is not notarized with an Apple Developer ID. On first launch, macOS may ask the user to approve the app from Finder or from System Settings > Privacy & Security.

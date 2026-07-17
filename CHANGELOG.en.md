@@ -6,6 +6,8 @@ This project follows the basic Semantic Versioning convention: patch releases fo
 
 ## Unreleased
 
+## 0.3.1
+
 - Adds confirmation before deleting a tunnel configuration, explains that deletion cannot be undone, and warns that a running tunnel will be stopped first.
 - Adds a default pull request template, issue entry points, a code of conduct, and private vulnerability reporting guidance.
 - Adds GitHub Actions dependency updates, generated release notes, and a tag-triggered automated Release workflow.

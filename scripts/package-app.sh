@@ -8,7 +8,7 @@ APP_VERSION="$(
   sed -n 's/.*public static let current = "\(.*\)".*/\1/p' \
     "${ROOT_DIR}/Sources/SSHTunnelCore/AppVersion.swift" | head -n 1
 )"
-APP_VERSION="${APP_VERSION:-0.3.0}"
+APP_VERSION="${APP_VERSION:-0.3.1}"
 
 DIST_DIR="${ROOT_DIR}/dist"
 WORK_DIR="$(mktemp -d "${TMPDIR:-/tmp}/ssh-tunnel-manager-package.XXXXXX")"
