@@ -54,13 +54,25 @@ dist/SSH Tunnel Manager-<version>.zip
 
 ## GitHub Release
 
-A GitHub Release should include:
+The `.github/workflows/release.yml` workflow runs automatically when a `v*` tag is pushed. It:
+
+1. Validates the tag and checks that it matches `AppVersion.current`.
+2. Runs `swift test`.
+3. Builds the zip through `scripts/package-app.sh`.
+4. Verifies the zip, app signature, and SHA-256 checksum.
+5. Creates the GitHub Release or replaces assets when the same tag is rerun.
+
+The generated GitHub Release should include:
 
 - Version number and a short summary.
 - Main changes.
 - Known limitation: the current zip uses local ad-hoc signing and is not notarized with a Developer ID.
 - Installation note: first launch may require right-clicking "Open" in Finder or allowing the app from System Settings.
 - The zip generated under `dist/`.
+
+Create the tag from a commit that already contains the Release workflow. A version mismatch stops the workflow before publishing assets.
+
+If a transient GitHub failure happens after the tag is pushed, run the `Release` workflow manually from the Actions page and provide the existing tag. Do not delete and recreate a published tag just to retry the workflow.
 
 ## Post-Release Check
 

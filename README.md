@@ -99,6 +99,7 @@ swift test
 - [发布流程](docs/release.md)
 - [更新日志](CHANGELOG.md)
 - [贡献指南](CONTRIBUTING.md)
+- [贡献者行为准则](CODE_OF_CONDUCT.md)
 - [安全政策](SECURITY.md)
 - [许可证](LICENSE)
 

@@ -10,7 +10,11 @@
 
 ## 报告安全问题
 
-如果你发现以下问题，请优先通过 GitHub Security Advisory 报告；如果仓库没有启用该功能，请先开一个脱敏 issue，说明“可能存在安全问题，需要私下沟通”，不要贴敏感细节。
+仓库已经启用 GitHub Private Vulnerability Reporting。请通过以下私密入口报告安全问题，不要先创建公开 Issue：
+
+- [新建私密漏洞报告](https://github.com/cidens/mac-ssh-tunnel-manager/security/advisories/new)
+
+报告时请提供受影响版本、最小复现步骤、预期影响和已经完成的脱敏说明。如果私密入口暂时不可用，可以创建一个不含技术细节的脱敏 Issue，说明“私密安全报告入口不可用”，等待维护者处理。
 
 - 可能导致任意命令执行的问题。
 - 可能泄露 SSH Host、用户名、内网 IP、私钥路径或本地配置的问题。

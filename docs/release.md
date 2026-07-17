@@ -54,13 +54,25 @@ dist/SSH Tunnel Manager-<version>.zip
 
 ## GitHub Release
 
-创建 GitHub Release 时建议包含：
+仓库中的 `.github/workflows/release.yml` 会在推送 `v*` 标签后自动执行：
+
+1. 校验标签格式，并确认标签版本与 `AppVersion.current` 一致。
+2. 运行 `swift test`。
+3. 调用 `scripts/package-app.sh` 生成 zip。
+4. 验证 zip、应用包签名和 SHA-256。
+5. 创建 GitHub Release，或在同一标签重跑时覆盖上传资产。
+
+自动创建的 GitHub Release 应包含：
 
 - 版本号和简短摘要。
 - 主要变化列表。
 - 已知限制：当前 zip 使用本机 ad-hoc 签名，没有 Developer ID notarization。
 - 安装提示：首次打开可能需要在 Finder 右键选择“打开”，或在系统设置中允许。
 - 上传 `dist/` 中生成的 zip。
+
+标签必须在包含 Release Workflow 的提交上创建。标签和版本不一致时，工作流会失败且不会发布资产。
+
+如果标签推送后工作流因为 GitHub 暂时故障而失败，可以在 Actions 页面手工运行 `Release` 工作流，并填写已经存在的标签。不要删除并重建已经公开的标签来重试。
 
 ## 发布后检查
 

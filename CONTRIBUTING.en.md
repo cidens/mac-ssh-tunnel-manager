@@ -77,3 +77,11 @@ PR descriptions should include:
 - Main implementation points.
 - Test commands and results.
 - Whether the change touches safety boundaries, SSH arguments, localization, or packaging.
+
+## Collaboration Workflow
+
+- Create or link an issue before non-trivial changes so the goal, scope, and acceptance criteria are clear.
+- Keep each pull request focused on one topic and use `Closes #<issue-number>` to link the work item.
+- Changes to `main` go through pull requests, required CI checks, and resolved review conversations.
+- The repository uses squash merge to keep the default branch history focused; write the PR title as the final commit summary.
+- Do not disclose vulnerabilities in a public issue or ordinary pull request. Follow the [security policy](SECURITY.en.md).

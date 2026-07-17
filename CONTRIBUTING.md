@@ -77,3 +77,11 @@ PR 描述建议包含：
 - 主要实现点。
 - 测试命令和结果。
 - 是否涉及安全边界、SSH 参数、本地化或打包。
+
+## 协作流程
+
+- 非微小改动应先创建或关联 Issue，确认目标、范围和验收条件。
+- 每个 Pull Request 尽量只解决一个主题，并使用 `Closes #<issue-number>` 关联工作项。
+- `main` 通过 Pull Request 合并，必须通过仓库要求的 CI 检查并解决审查对话。
+- 仓库使用 squash merge 保持主分支历史清晰；PR 标题应能作为最终提交说明。
+- 安全漏洞不要通过公开 Issue 或普通 Pull Request 首次披露，请遵循 [安全政策](SECURITY.md)。
