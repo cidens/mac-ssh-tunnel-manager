@@ -12,6 +12,7 @@ struct TunnelMenuView: View {
     @State private var selectedTag: String?
     @State private var favoritesOnly = false
     @State private var sortOption: TunnelSortOption = .manual
+    @FocusState private var isSearchFocused: Bool
 
     var body: some View {
         ZStack {
@@ -48,6 +49,20 @@ struct TunnelMenuView: View {
         .sheet(isPresented: $isShowingSettings) {
             GlobalShortcutSettingsView()
                 .environmentObject(shortcutController)
+        }
+        .onChange(of: manager.riskWarning?.id) { _, warningID in
+            if warningID != nil {
+                isSearchFocused = false
+            }
+        }
+        .onExitCommand {
+            if tunnelPendingDeletion != nil {
+                tunnelPendingDeletion = nil
+            } else if manager.riskWarning != nil {
+                manager.cancelRiskyOperation()
+            } else {
+                isSearchFocused = false
+            }
         }
     }
 
@@ -109,6 +124,7 @@ struct TunnelMenuView: View {
                     Button(AppStrings.cancel()) {
                         manager.cancelRiskyOperation()
                     }
+                    .keyboardShortcut(.cancelAction)
                     Button(AppStrings.continueAnyway()) {
                         manager.confirmRiskyOperation()
                     }
@@ -196,7 +212,10 @@ struct TunnelMenuView: View {
             ForEach(displayed) { tunnel in
                 TunnelRowView(
                     tunnel: tunnel,
-                    onDeleteRequest: { tunnelPendingDeletion = $0 },
+                    onDeleteRequest: {
+                        isSearchFocused = false
+                        tunnelPendingDeletion = $0
+                    },
                     showsManualOrderControls: sortOption == .manual && searchQuery.isEmpty && selectedTag == nil && !favoritesOnly
                 )
                     .environmentObject(manager)
@@ -210,6 +229,7 @@ struct TunnelMenuView: View {
             HStack(spacing: 8) {
                 TextField(AppStrings.searchTunnels(), text: $searchQuery)
                     .textFieldStyle(.roundedBorder)
+                    .focused($isSearchFocused)
                 Toggle(isOn: $favoritesOnly) {
                     Image(systemName: favoritesOnly ? "star.fill" : "star")
                 }
