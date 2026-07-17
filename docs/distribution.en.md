@@ -28,7 +28,7 @@ The script:
 Example output:
 
 ```text
-dist/SSH Tunnel Manager-0.3.0.zip
+dist/SSH Tunnel Manager-0.3.1.zip
 ```
 
 `dist/` is a build output directory and should not be committed to Git.
@@ -37,7 +37,7 @@ dist/SSH Tunnel Manager-0.3.0.zip
 
 After receiving the zip package, users install it like this:
 
-1. Unzip `SSH Tunnel Manager-0.3.0.zip`.
+1. Unzip `SSH Tunnel Manager-0.3.1.zip`.
 2. Drag `SSH Tunnel Manager.app` to `/Applications`.
 3. Open the app from Finder, Spotlight, or Launchpad.
 4. Add tunnel definitions based on their own `~/.ssh/config`.
