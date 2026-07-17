@@ -1,0 +1,89 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 已存在且需要发布或重新上传资产的版本标签，例如 v0.4.0
+        required: true
+        type: string
+
+permissions:
+  contents: write
+
+concurrency:
+  group: release-${{ inputs.tag || github.ref_name }}
+  cancel-in-progress: false
+
+jobs:
+  release:
+    name: Build and publish release
+    runs-on: macos-latest
+    env:
+      RELEASE_TAG: ${{ inputs.tag || github.ref_name }}
+      GH_TOKEN: ${{ github.token }}
+
+    steps:
+      - name: Checkout release tag
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          ref: ${{ inputs.tag || github.ref }}
+
+      - name: Validate tag and app version
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ ! "${RELEASE_TAG}" =~ ^v[0-9]+\.[0-9]+\.[0-9]+([.-][0-9A-Za-z.-]+)?$ ]]; then
+            echo "Unsupported release tag: ${RELEASE_TAG}" >&2
+            exit 1
+          fi
+          git rev-parse --verify "refs/tags/${RELEASE_TAG}^{commit}" >/dev/null
+          app_version="$(sed -n 's/.*public static let current = "\(.*\)".*/\1/p' Sources/SSHTunnelCore/AppVersion.swift | head -n 1)"
+          if [[ "${RELEASE_TAG#v}" != "${app_version}" ]]; then
+            echo "Tag ${RELEASE_TAG} does not match app version ${app_version}" >&2
+            exit 1
+          fi
+
+      - name: Show Swift version
+        run: swift --version
+
+      - name: Run tests
+        run: swift test
+
+      - name: Build distribution package
+        run: ./scripts/package-app.sh
+
+      - name: Verify package
+        shell: bash
+        run: |
+          set -euo pipefail
+          app_version="${RELEASE_TAG#v}"
+          asset="dist/SSH Tunnel Manager-${app_version}.zip"
+          test -f "${asset}"
+          unzip -t "${asset}"
+          verify_dir="$(mktemp -d "${RUNNER_TEMP}/ssh-tunnel-manager-release.XXXXXX")"
+          trap 'rm -rf "${verify_dir}"' EXIT
+          ditto -x -k "${asset}" "${verify_dir}"
+          codesign --verify --deep --strict "${verify_dir}/SSH Tunnel Manager.app"
+          shasum -a 256 "${asset}" > "${asset}.sha256"
+
+      - name: Publish or update GitHub Release
+        shell: bash
+        run: |
+          set -euo pipefail
+          app_version="${RELEASE_TAG#v}"
+          asset="dist/SSH Tunnel Manager-${app_version}.zip"
+          checksum="${asset}.sha256"
+          if gh release view "${RELEASE_TAG}" >/dev/null 2>&1; then
+            gh release upload "${RELEASE_TAG}" "${asset}" "${checksum}" --clobber
+          else
+            gh release create "${RELEASE_TAG}" "${asset}" "${checksum}" \
+              --verify-tag \
+              --generate-notes \
+              --latest \
+              --title "SSH Tunnel Manager ${RELEASE_TAG}"
+          fi

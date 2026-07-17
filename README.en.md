@@ -92,6 +92,7 @@ swift test
 - [Release process](docs/release.en.md)
 - [Changelog](CHANGELOG.en.md)
 - [Contributing](CONTRIBUTING.en.md)
+- [Code of Conduct](CODE_OF_CONDUCT.md)
 - [Security policy](SECURITY.en.md)
 - [License](LICENSE)
 

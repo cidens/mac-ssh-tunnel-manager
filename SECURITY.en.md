@@ -10,7 +10,11 @@ Only the latest public version and the `main` branch are maintained. Older versi
 
 ## Reporting Security Issues
 
-If you find one of the following issues, please prefer GitHub Security Advisory. If the repository does not have that feature enabled, open a sanitized issue saying that a potential security issue needs private follow-up, without posting sensitive details.
+GitHub Private Vulnerability Reporting is enabled for this repository. Report security issues through the private channel below instead of opening a public issue:
+
+- [Open a private vulnerability report](https://github.com/cidens/mac-ssh-tunnel-manager/security/advisories/new)
+
+Include the affected version, minimal reproduction steps, expected impact, and a note confirming that the report has been sanitized. If the private channel is temporarily unavailable, open a sanitized issue without technical details stating that the private security channel is unavailable.
 
 - A possible arbitrary command execution issue.
 - Possible leakage of SSH Host aliases, usernames, private IPs, private-key paths, or local configuration.
