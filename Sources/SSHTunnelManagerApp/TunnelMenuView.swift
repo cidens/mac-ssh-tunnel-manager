@@ -8,12 +8,18 @@ struct TunnelMenuView: View {
     @State private var isAdding = false
     @State private var isShowingSettings = false
     @State private var tunnelPendingDeletion: TunnelConfig?
+    @State private var searchQuery = ""
+    @State private var selectedTag: String?
+    @State private var favoritesOnly = false
+    @State private var sortOption: TunnelSortOption = .manual
 
     var body: some View {
         ZStack {
             VStack(alignment: .leading, spacing: 14) {
                 header
                 Divider()
+
+                filters
 
                 ScrollView {
                     if manager.tunnels.isEmpty {
@@ -174,12 +180,86 @@ struct TunnelMenuView: View {
     }
 
     private var tunnelList: some View {
-        LazyVStack(spacing: 10) {
-            ForEach(manager.tunnels) { tunnel in
-                TunnelRowView(tunnel: tunnel) { tunnelPendingDeletion = $0 }
+        let displayed = manager.displayedTunnels(
+            searchQuery: searchQuery,
+            selectedTag: selectedTag,
+            favoritesOnly: favoritesOnly,
+            sort: sortOption
+        )
+        return LazyVStack(spacing: 10) {
+            if displayed.isEmpty {
+                Text(AppStrings.noMatchingTunnels())
+                    .foregroundStyle(.secondary)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(.vertical, 18)
+            }
+            ForEach(displayed) { tunnel in
+                TunnelRowView(
+                    tunnel: tunnel,
+                    onDeleteRequest: { tunnelPendingDeletion = $0 },
+                    showsManualOrderControls: sortOption == .manual && searchQuery.isEmpty && selectedTag == nil && !favoritesOnly
+                )
                     .environmentObject(manager)
             }
         }
+    }
+
+    private var filters: some View {
+        let availableTags = manager.availableTags
+        return VStack(alignment: .leading, spacing: 8) {
+            HStack(spacing: 8) {
+                TextField(AppStrings.searchTunnels(), text: $searchQuery)
+                    .textFieldStyle(.roundedBorder)
+                Toggle(isOn: $favoritesOnly) {
+                    Image(systemName: favoritesOnly ? "star.fill" : "star")
+                }
+                .toggleStyle(.button)
+                .help(AppStrings.favoritesOnly())
+                Picker(AppStrings.sort(), selection: $sortOption) {
+                    Text(AppStrings.sortManual()).tag(TunnelSortOption.manual)
+                    Text(AppStrings.sortName()).tag(TunnelSortOption.name)
+                    Text(AppStrings.sortStatus()).tag(TunnelSortOption.status)
+                    Text(AppStrings.sortLastUsed()).tag(TunnelSortOption.lastUsed)
+                }
+                .labelsHidden()
+                .frame(width: 130)
+            }
+            if !availableTags.isEmpty || selectedTag != nil || !searchQuery.isEmpty || favoritesOnly {
+                HStack(spacing: 6) {
+                    ScrollView(.horizontal, showsIndicators: false) {
+                        HStack(spacing: 6) {
+                            Button(AppStrings.allTags()) { selectedTag = nil }
+                                .buttonStyle(.bordered)
+                                .tint(selectedTag == nil ? .accentColor : nil)
+                            ForEach(availableTags, id: \.self) { tag in
+                                Button(tag) {
+                                    selectedTag = isSelectedTag(tag) ? nil : tag
+                                }
+                                .buttonStyle(.bordered)
+                                .tint(isSelectedTag(tag) ? .accentColor : nil)
+                            }
+                        }
+                    }
+                    .frame(maxWidth: .infinity)
+                    let count = manager.displayedTunnels(searchQuery: searchQuery, selectedTag: selectedTag, favoritesOnly: favoritesOnly, sort: sortOption).count
+                    Text(AppStrings.resultCount(count))
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                    if selectedTag != nil || !searchQuery.isEmpty || favoritesOnly {
+                        Button(AppStrings.clearFilters()) {
+                            searchQuery = ""
+                            selectedTag = nil
+                            favoritesOnly = false
+                        }
+                        .buttonStyle(.borderless)
+                    }
+                }
+            }
+        }
+    }
+
+    private func isSelectedTag(_ tag: String) -> Bool {
+        selectedTag?.caseInsensitiveCompare(tag) == .orderedSame
     }
 
     private var addSection: some View {
@@ -229,6 +309,7 @@ struct TunnelRowView: View {
     @EnvironmentObject private var manager: TunnelManager
     let tunnel: TunnelConfig
     let onDeleteRequest: (TunnelConfig) -> Void
+    let showsManualOrderControls: Bool
     @State private var isEditing = false
     @State private var editDraft = TunnelDraft()
     @State private var editError = ""
@@ -248,6 +329,13 @@ struct TunnelRowView: View {
             }
 
             HStack {
+                Button {
+                    manager.toggleFavorite(tunnel)
+                } label: {
+                    Image(systemName: tunnel.isFavorite ? "star.fill" : "star")
+                }
+                .buttonStyle(.borderless)
+                .help(AppStrings.favorite())
                 if manager.isManagedProcessRunning(for: tunnel) {
                     Button(AppStrings.stop()) {
                         manager.stop(tunnel)
@@ -274,6 +362,19 @@ struct TunnelRowView: View {
                     } label: {
                         Label(isEditing ? AppStrings.collapseEdit() : AppStrings.edit(), systemImage: "pencil")
                     }
+                }
+
+                if showsManualOrderControls {
+                    Button { manager.moveManualOrder(tunnel, direction: -1) } label: {
+                        Image(systemName: "arrow.up")
+                    }
+                    .buttonStyle(.borderless)
+                    .help(AppStrings.moveUp())
+                    Button { manager.moveManualOrder(tunnel, direction: 1) } label: {
+                        Image(systemName: "arrow.down")
+                    }
+                    .buttonStyle(.borderless)
+                    .help(AppStrings.moveDown())
                 }
 
                 Spacer()
@@ -311,6 +412,12 @@ struct TunnelRowView: View {
                     .font(.caption.monospaced())
                     .foregroundStyle(.red)
                     .fixedSize(horizontal: false, vertical: true)
+            }
+
+            if !tunnel.tags.isEmpty {
+                Text(tunnel.tags.map { "#\($0)" }.joined(separator: "  "))
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
             }
 
             let error = manager.lastError(for: tunnel)
@@ -416,6 +523,10 @@ struct TunnelFormView: View {
             GridRow {
                 Text(AppStrings.formOpenURL())
                 TextField(AppStrings.placeholderOpenURL(), text: $draft.openURL)
+            }
+            GridRow {
+                Text(AppStrings.formTags())
+                TextField(AppStrings.placeholderTags(), text: $draft.tags)
             }
         }
         .textFieldStyle(.roundedBorder)

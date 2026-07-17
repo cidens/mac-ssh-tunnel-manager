@@ -14,6 +14,15 @@ struct TunnelRiskWarning: Identifiable {
     let message: String
 }
 
+enum TunnelSortOption: String, CaseIterable, Identifiable {
+    case manual
+    case name
+    case status
+    case lastUsed
+
+    var id: String { rawValue }
+}
+
 private struct TunnelRiskConfirmationRequired: Error {
     let message: String
 }
@@ -52,6 +61,13 @@ final class TunnelManager: ObservableObject {
         self.sshConfigResolver = sshConfigResolver
         do {
             tunnels = try store.load()
+            if tunnels.allSatisfy({ $0.manualOrder == nil }) {
+                for index in tunnels.indices {
+                    tunnels[index].manualOrder = index
+                }
+            } else {
+                normalizeManualOrder()
+            }
         } catch {
             addError = AppStrings.failedToLoadTunnels(error.localizedDescription)
         }
@@ -112,6 +128,83 @@ final class TunnelManager: ObservableObject {
         runtimes[tunnel.id]?.process?.isRunning == true
     }
 
+    func displayedTunnels(
+        searchQuery: String,
+        selectedTag: String?,
+        favoritesOnly: Bool,
+        sort: TunnelSortOption
+    ) -> [TunnelConfig] {
+        let query = searchQuery.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        let result = tunnels.filter { tunnel in
+            let matchesTag = selectedTag.map { selected in
+                tunnel.tags.contains { $0.caseInsensitiveCompare(selected) == .orderedSame }
+            } ?? true
+            let searchable = searchableText(for: tunnel).lowercased()
+            return matchesTag && (!favoritesOnly || tunnel.isFavorite) && (query.isEmpty || searchable.contains(query))
+        }
+
+        switch sort {
+        case .manual:
+            return result.sorted { ($0.manualOrder ?? Int.max, $0.name) < ($1.manualOrder ?? Int.max, $1.name) }
+        case .name:
+            return result.sorted {
+                let comparison = $0.name.localizedStandardCompare($1.name)
+                return comparison == .orderedSame
+                    ? manualOrder(of: $0) < manualOrder(of: $1)
+                    : comparison == .orderedAscending
+            }
+        case .status:
+            return result.sorted {
+                let left = statusSortRank(status(for: $0))
+                let right = statusSortRank(status(for: $1))
+                guard left == right else { return left < right }
+                let comparison = $0.name.localizedStandardCompare($1.name)
+                return comparison == .orderedSame
+                    ? manualOrder(of: $0) < manualOrder(of: $1)
+                    : comparison == .orderedAscending
+            }
+        case .lastUsed:
+            return result.sorted {
+                let left = $0.lastUsedAt ?? .distantPast
+                let right = $1.lastUsedAt ?? .distantPast
+                return left == right ? manualOrder(of: $0) < manualOrder(of: $1) : left > right
+            }
+        }
+    }
+
+    var availableTags: [String] {
+        var seen = Set<String>()
+        var tags: [String] = []
+        for tag in tunnels.flatMap(\.tags) {
+            let comparisonKey = tag.folding(options: .caseInsensitive, locale: nil)
+            if seen.insert(comparisonKey).inserted {
+                tags.append(tag)
+            }
+        }
+        return tags.sorted { $0.localizedStandardCompare($1) == .orderedAscending }
+    }
+
+    func toggleFavorite(_ tunnel: TunnelConfig) {
+        guard let index = tunnels.firstIndex(where: { $0.id == tunnel.id }) else { return }
+        persistChanges {
+            tunnels[index].isFavorite.toggle()
+        }
+    }
+
+    func moveManualOrder(_ tunnel: TunnelConfig, direction: Int) {
+        let ordered = displayedTunnels(searchQuery: "", selectedTag: nil, favoritesOnly: false, sort: .manual)
+        guard let current = ordered.firstIndex(where: { $0.id == tunnel.id }) else { return }
+        let target = current + direction
+        guard ordered.indices.contains(target) else { return }
+        var ids = ordered.map(\.id)
+        ids.swapAt(current, target)
+        let lookup = Dictionary(uniqueKeysWithValues: tunnels.map { ($0.id, $0) })
+        persistChanges {
+            tunnels = ids.compactMap { lookup[$0] }
+            assignManualOrderFromCurrentSequence()
+        }
+    }
+
     @discardableResult
     func addTunnel(_ draft: TunnelDraft, onSuccess: (() -> Void)? = nil) -> Bool {
         addTunnel(draft, allowRiskyBind: false, onSuccess: onSuccess)
@@ -125,7 +218,8 @@ final class TunnelManager: ObservableObject {
     ) -> Bool {
         addError = ""
         do {
-            let tunnel = try validatedTunnel(from: draft, allowRiskyBind: allowRiskyBind)
+            var tunnel = try validatedTunnel(from: draft, allowRiskyBind: allowRiskyBind)
+            tunnel.manualOrder = (tunnels.map { $0.manualOrder ?? -1 }.max() ?? -1) + 1
             tunnels.append(tunnel)
             try save()
             onSuccess?()
@@ -164,7 +258,7 @@ final class TunnelManager: ObservableObject {
         }
 
         do {
-            let updatedTunnel = try validatedTunnel(
+            var updatedTunnel = try validatedTunnel(
                 from: draft,
                 id: tunnel.id,
                 allowRiskyBind: allowRiskyBind
@@ -172,6 +266,9 @@ final class TunnelManager: ObservableObject {
             guard let index = tunnels.firstIndex(where: { $0.id == tunnel.id }) else {
                 return false
             }
+            updatedTunnel.isFavorite = tunnel.isFavorite
+            updatedTunnel.manualOrder = tunnel.manualOrder
+            updatedTunnel.lastUsedAt = tunnel.lastUsedAt
             tunnels[index] = updatedTunnel
             runtimes[tunnel.id]?.lastError = ""
             try save()
@@ -292,6 +389,7 @@ final class TunnelManager: ObservableObject {
             }
 
             try process.run()
+            markTunnelUsed(tunnel.id)
             refreshStatuses()
         } catch let confirmation as TunnelRiskConfirmationRequired {
             requestRiskConfirmation(message: confirmation.message) { [weak self] in
@@ -388,7 +486,69 @@ final class TunnelManager: ObservableObject {
     }
 
     private func save() throws {
+        normalizeManualOrder()
         try store.save(tunnels)
+    }
+
+    private func persistChanges(_ changes: () -> Void) {
+        let previousTunnels = tunnels
+        changes()
+        do {
+            try save()
+        } catch {
+            tunnels = previousTunnels
+            addError = AppStrings.failedToSaveTunnels(error.localizedDescription)
+        }
+    }
+
+    private func normalizeManualOrder() {
+        tunnels.sort { ($0.manualOrder ?? Int.max, $0.name) < ($1.manualOrder ?? Int.max, $1.name) }
+        assignManualOrderFromCurrentSequence()
+    }
+
+    private func assignManualOrderFromCurrentSequence() {
+        for index in tunnels.indices { tunnels[index].manualOrder = index }
+    }
+
+    private func markTunnelUsed(_ id: TunnelConfig.ID) {
+        guard let index = tunnels.firstIndex(where: { $0.id == id }) else { return }
+        persistChanges {
+            tunnels[index].lastUsedAt = Date()
+        }
+    }
+
+    private func statusSortRank(_ status: TunnelRuntimeStatus) -> Int {
+        switch status {
+        case .failed: return 0
+        case .running, .portListening: return 1
+        case .externalListening: return 2
+        case .stopped: return 3
+        }
+    }
+
+    private func manualOrder(of tunnel: TunnelConfig) -> Int {
+        tunnel.manualOrder ?? Int.max
+    }
+
+    private func searchableText(for tunnel: TunnelConfig) -> String {
+        var fields = [
+            tunnel.name,
+            tunnel.tags.joined(separator: " "),
+            tunnel.mode.rawValue,
+            AppStrings.modeName(tunnel.mode)
+        ]
+        switch tunnel.mode {
+        case .localForward:
+            fields += [
+                tunnel.sshHost, tunnel.localHost, String(tunnel.localPort),
+                tunnel.remoteHost, String(tunnel.remotePort)
+            ]
+        case .dynamicForward:
+            fields += [tunnel.sshHost, tunnel.localHost, String(tunnel.localPort)]
+        case .sshConfig:
+            fields.append(tunnel.sshConfigName ?? "")
+        }
+        return fields.joined(separator: " ")
     }
 
     private func validatedTunnel(

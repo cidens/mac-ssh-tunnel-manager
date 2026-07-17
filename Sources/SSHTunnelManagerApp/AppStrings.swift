@@ -346,6 +346,23 @@ enum AppStrings {
         string("placeholder.openURL", language: language)
     }
 
+    static func formTags(language: String? = nil) -> String { string("form.tags", language: language) }
+    static func placeholderTags(language: String? = nil) -> String { string("placeholder.tags", language: language) }
+    static func searchTunnels(language: String? = nil) -> String { string("filter.search", language: language) }
+    static func favoritesOnly(language: String? = nil) -> String { string("filter.favorites", language: language) }
+    static func allTags(language: String? = nil) -> String { string("filter.allTags", language: language) }
+    static func clearFilters(language: String? = nil) -> String { string("filter.clear", language: language) }
+    static func resultCount(_ count: Int, language: String? = nil) -> String { format("filter.resultCount", language: language, count) }
+    static func noMatchingTunnels(language: String? = nil) -> String { string("filter.empty", language: language) }
+    static func sort(language: String? = nil) -> String { string("sort.label", language: language) }
+    static func sortManual(language: String? = nil) -> String { string("sort.manual", language: language) }
+    static func sortName(language: String? = nil) -> String { string("sort.name", language: language) }
+    static func sortStatus(language: String? = nil) -> String { string("sort.status", language: language) }
+    static func sortLastUsed(language: String? = nil) -> String { string("sort.lastUsed", language: language) }
+    static func favorite(language: String? = nil) -> String { string("button.favorite", language: language) }
+    static func moveUp(language: String? = nil) -> String { string("button.moveUp", language: language) }
+    static func moveDown(language: String? = nil) -> String { string("button.moveDown", language: language) }
+
     private static func stringsDictionary(language: String) -> [String: String] {
         guard let url = stringsURL(language: language),
               let dictionary = NSDictionary(contentsOf: url) as? [String: String] else {

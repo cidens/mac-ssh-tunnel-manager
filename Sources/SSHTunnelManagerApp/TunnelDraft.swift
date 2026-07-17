@@ -11,6 +11,7 @@ struct TunnelDraft {
     var remotePort = ""
     var sshConfigName = ""
     var openURL = ""
+    var tags = ""
 
     init() {}
 
@@ -18,6 +19,7 @@ struct TunnelDraft {
         mode = tunnel.mode
         name = tunnel.name
         openURL = tunnel.openURL?.absoluteString ?? ""
+        tags = tunnel.tags.joined(separator: ", ")
 
         switch tunnel.mode {
         case .localForward:
@@ -36,22 +38,25 @@ struct TunnelDraft {
     }
 
     func makeConfig(id: TunnelConfig.ID = UUID()) throws -> TunnelConfig {
+        let normalizedTags = try TunnelConfig.normalizedTags(tags.components(separatedBy: ","))
         switch mode {
         case .sshConfig:
             let url = try TunnelInputParser.optionalURL(from: openURL)
-            return TunnelConfig(
+            var config = TunnelConfig(
                 id: id,
                 name: name.trimmingCharacters(in: .whitespacesAndNewlines),
                 sshConfigName: sshConfigName.trimmingCharacters(in: .whitespacesAndNewlines),
                 openURL: url
             )
+            config.tags = normalizedTags
+            return config
         case .dynamicForward:
             guard let localPortNumber = Int(localPort.trimmingCharacters(in: .whitespacesAndNewlines)) else {
                 throw TunnelValidationError.invalidPort("localPort")
             }
             let url = try TunnelInputParser.optionalURL(from: openURL)
 
-            return TunnelConfig(
+            var config = TunnelConfig(
                 id: id,
                 name: name.trimmingCharacters(in: .whitespacesAndNewlines),
                 sshHost: sshHost.trimmingCharacters(in: .whitespacesAndNewlines),
@@ -59,6 +64,8 @@ struct TunnelDraft {
                 localPort: localPortNumber,
                 openURL: url
             )
+            config.tags = normalizedTags
+            return config
         case .localForward:
             guard let localPortNumber = Int(localPort.trimmingCharacters(in: .whitespacesAndNewlines)) else {
                 throw TunnelValidationError.invalidPort("localPort")
@@ -68,7 +75,7 @@ struct TunnelDraft {
             }
             let url = try TunnelInputParser.optionalURL(from: openURL)
 
-            return TunnelConfig(
+            var config = TunnelConfig(
                 id: id,
                 name: name.trimmingCharacters(in: .whitespacesAndNewlines),
                 sshHost: sshHost.trimmingCharacters(in: .whitespacesAndNewlines),
@@ -78,6 +85,8 @@ struct TunnelDraft {
                 remotePort: remotePortNumber,
                 openURL: url
             )
+            config.tags = normalizedTags
+            return config
         }
     }
 }
