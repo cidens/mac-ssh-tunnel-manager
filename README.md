@@ -17,6 +17,7 @@
 - 隧道配置以 JSON 保存在本机。
 - 支持通过标签、收藏、搜索和排序快速定位隧道配置。
 - 支持为单条隧道启用自动重连，并在断网或睡眠恢复后按退避策略恢复。
+- 支持默认关闭的连接失败/恢复通知，以及不含配置名称、Host、端口目标和原始 stderr 的可复制诊断信息。
 - 不保存服务器密码或私钥。
 - 不内置任何默认隧道配置。
 - 界面支持英文和简体中文，默认跟随 macOS 系统语言。
@@ -97,6 +98,7 @@ swift test
 - [全局快捷键备用入口验收记录](docs/validation-global-shortcut.md)
 - [配置组织功能验收记录](docs/validation-config-organization.md)
 - [自动重连与网络、睡眠恢复验收记录](docs/validation-auto-reconnect.md)
+- [连接通知与诊断验收记录](docs/validation-connection-notifications.md)
 - [分发说明](docs/distribution.md)
 - [隐私说明](docs/privacy.md)
 - [排障手册](docs/troubleshooting.md)
@@ -119,6 +121,12 @@ swift test
 
 ```text
 ~/Library/Application Support/ssh-tunnel-manager/settings.json
+```
+
+连接通知设置独立保存到：
+
+```text
+~/Library/Application Support/ssh-tunnel-manager/connection-notifications.json
 ```
 
 每条隧道保存以下字段：
@@ -162,6 +170,12 @@ swift test
 每条配置可以独立启用“自动重连”，默认关闭。启用后，可恢复的 SSH 连接故障按 2、5、10、30、60 秒退避重试，后续失败保持 60 秒上限；连续稳定运行 5 分钟后重新从 2 秒开始计数。
 
 断网和系统睡眠期间不会重试。网络恢复或系统唤醒后，应用等待网络稳定 2 秒再恢复连接。等待网络、等待重连或正在连接时点击“停止”，都会取消运行意图和待执行任务，之后不会自行重启。认证失败、Host Key 校验失败、监听端口冲突和配置错误会直接进入失败状态，需要修复后手工启动；自动恢复期间的 SSH Config 瞬时校验超时会继续下一档退避。
+
+## 连接通知与诊断
+
+连接通知默认关闭。只有在设置中主动启用时，应用才请求 macOS 通知权限；拒绝权限不会影响隧道运行。每个连续故障周期最多发送一次失败通知和一次恢复通知，恢复通知会在 SSH 进程稳定运行 2 秒后发送；面板打开时也会正常展示前台通知。用户主动停止、编辑、删除或退出应用不会触发掉线通知。
+
+每条隧道的“连接详情”会显示状态变化时间、退出码、重试次数、下次重试时间、错误类别和已脱敏错误摘要。“复制诊断信息”仅复制应用版本、macOS 版本、CPU 架构、隧道模式、状态、时间、退出码、重试信息和错误类别，不包含配置名称、Host/IP、用户名、端口目标、私钥路径、完整 SSH 命令或原始 stderr。
 
 首次启动时列表为空，需要在菜单栏界面中手动添加隧道。
 

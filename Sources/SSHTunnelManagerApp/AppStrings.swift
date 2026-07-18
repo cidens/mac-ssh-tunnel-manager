@@ -124,8 +124,116 @@ enum AppStrings {
         string("button.settings", language: language)
     }
 
+    static func settingsTitle(language: String? = nil) -> String {
+        string("settings.title", language: language)
+    }
+
     static func settingsHelp(language: String? = nil) -> String {
         string("help.settings", language: language)
+    }
+
+    static func notificationSettingsTitle(language: String? = nil) -> String {
+        string("notification.settings.title", language: language)
+    }
+
+    static func notificationEnabled(language: String? = nil) -> String {
+        string("notification.enabled", language: language)
+    }
+
+    static func notificationPermissionHelp(language: String? = nil) -> String {
+        string("notification.permission.help", language: language)
+    }
+
+    static func notificationPermissionDenied(language: String? = nil) -> String {
+        string("notification.permission.denied", language: language)
+    }
+
+    static func notificationPermissionFailed(language: String? = nil) -> String {
+        string("notification.error.permission", language: language)
+    }
+
+    static func notificationSettingsLoadFailed(language: String? = nil) -> String {
+        string("notification.error.load", language: language)
+    }
+
+    static func notificationSettingsSaveFailed(language: String? = nil) -> String {
+        string("notification.error.save", language: language)
+    }
+
+    static func notificationDeliveryFailed(language: String? = nil) -> String {
+        string("notification.error.delivery", language: language)
+    }
+
+    static func notificationFailureTitle(language: String? = nil) -> String {
+        string("notification.failure.title", language: language)
+    }
+
+    static func notificationFailureBody(
+        category: TunnelFailureCategory,
+        retryCount: Int,
+        willRetry: Bool,
+        language: String? = nil
+    ) -> String {
+        let categoryText = failureCategory(category, language: language)
+        return willRetry
+            ? format("notification.failure.retry", language: language, categoryText, retryCount)
+            : format("notification.failure.stopped", language: language, categoryText)
+    }
+
+    static func notificationRecoveryTitle(language: String? = nil) -> String {
+        string("notification.recovery.title", language: language)
+    }
+
+    static func notificationRecoveryBody(language: String? = nil) -> String {
+        string("notification.recovery.body", language: language)
+    }
+
+    static func failureCategory(_ category: TunnelFailureCategory, language: String? = nil) -> String {
+        string("diagnostic.category.\(category.rawValue)", language: language)
+    }
+
+    static func connectionDetails(language: String? = nil) -> String {
+        string("diagnostic.details", language: language)
+    }
+
+    static func copyDiagnostics(language: String? = nil) -> String {
+        string("diagnostic.copy", language: language)
+    }
+
+    static func diagnosticsCopied(language: String? = nil) -> String {
+        string("diagnostic.copied", language: language)
+    }
+
+    static func diagnosticStatusChanged(language: String? = nil) -> String {
+        string("diagnostic.statusChanged", language: language)
+    }
+
+    static func diagnosticExitCode(language: String? = nil) -> String {
+        string("diagnostic.exitCode", language: language)
+    }
+
+    static func diagnosticRetryCount(language: String? = nil) -> String {
+        string("diagnostic.retryCount", language: language)
+    }
+
+    static func diagnosticNextRetry(language: String? = nil) -> String {
+        string("diagnostic.nextRetry", language: language)
+    }
+
+    static func diagnosticErrorCategory(language: String? = nil) -> String {
+        string("diagnostic.errorCategory", language: language)
+    }
+
+    static func diagnosticErrorSummary(language: String? = nil) -> String {
+        string("diagnostic.errorSummary", language: language)
+    }
+
+    static func diagnosticNone(language: String? = nil) -> String {
+        string("diagnostic.none", language: language)
+    }
+
+    static func done(language: String? = nil) -> String {
+        string("button.done", language: language)
     }
 
     static func shortcutSettingsTitle(language: String? = nil) -> String {

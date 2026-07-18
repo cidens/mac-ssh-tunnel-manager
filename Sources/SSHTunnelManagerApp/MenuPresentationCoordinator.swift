@@ -15,6 +15,7 @@ final class MenuPresentationCoordinator: NSObject {
 
     private let manager: TunnelManager
     private let shortcutController: GlobalShortcutController
+    private let notificationController: ConnectionNotificationController
     private let statusItem: NSStatusItem
     private let panel: MenuPanel
     private let hostingController: NSHostingController<MenuPanelRootView>
@@ -22,14 +23,20 @@ final class MenuPresentationCoordinator: NSObject {
     private var localMouseMonitor: Any?
     private var globalMouseMonitor: Any?
 
-    init(manager: TunnelManager, shortcutController: GlobalShortcutController) {
+    init(
+        manager: TunnelManager,
+        shortcutController: GlobalShortcutController,
+        notificationController: ConnectionNotificationController
+    ) {
         self.manager = manager
         self.shortcutController = shortcutController
+        self.notificationController = notificationController
         statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.squareLength)
         hostingController = NSHostingController(
             rootView: MenuPanelRootView(
                 manager: manager,
-                shortcutController: shortcutController
+                shortcutController: shortcutController,
+                notificationController: notificationController
             )
         )
         panel = MenuPanel(
@@ -239,11 +246,13 @@ final class MenuPanel: NSPanel {
 struct MenuPanelRootView: View {
     @ObservedObject var manager: TunnelManager
     @ObservedObject var shortcutController: GlobalShortcutController
+    @ObservedObject var notificationController: ConnectionNotificationController
 
     var body: some View {
         TunnelMenuView()
             .environmentObject(manager)
             .environmentObject(shortcutController)
+            .environmentObject(notificationController)
             .frame(width: 460)
             .frame(maxHeight: .infinity, alignment: .top)
             .background(.regularMaterial)

@@ -4,6 +4,7 @@ import SSHTunnelCore
 struct TunnelMenuView: View {
     @EnvironmentObject private var manager: TunnelManager
     @EnvironmentObject private var shortcutController: GlobalShortcutController
+    @EnvironmentObject private var notificationController: ConnectionNotificationController
     @State private var draft = TunnelDraft()
     @State private var isAdding = false
     @State private var isShowingSettings = false
@@ -49,6 +50,7 @@ struct TunnelMenuView: View {
         .sheet(isPresented: $isShowingSettings) {
             GlobalShortcutSettingsView()
                 .environmentObject(shortcutController)
+                .environmentObject(notificationController)
         }
         .onChange(of: manager.riskWarning?.id) { _, warningID in
             if warningID != nil {
@@ -331,6 +333,7 @@ struct TunnelRowView: View {
     let onDeleteRequest: (TunnelConfig) -> Void
     let showsManualOrderControls: Bool
     @State private var isEditing = false
+    @State private var isShowingDetails = false
     @State private var editDraft = TunnelDraft()
     @State private var editError = ""
 
@@ -383,6 +386,15 @@ struct TunnelRowView: View {
                         Label(isEditing ? AppStrings.collapseEdit() : AppStrings.edit(), systemImage: "pencil")
                     }
                 }
+
+                Button {
+                    isShowingDetails = true
+                } label: {
+                    Image(systemName: "info.circle")
+                }
+                .buttonStyle(.borderless)
+                .help(AppStrings.connectionDetails())
+                .accessibilityLabel(AppStrings.connectionDetails())
 
                 if showsManualOrderControls {
                     Button { manager.moveManualOrder(tunnel, direction: -1) } label: {
@@ -451,6 +463,10 @@ struct TunnelRowView: View {
         .padding(10)
         .background(.quaternary.opacity(0.35))
         .clipShape(RoundedRectangle(cornerRadius: 8))
+        .sheet(isPresented: $isShowingDetails) {
+            TunnelConnectionDetailsView(tunnel: tunnel)
+                .environmentObject(manager)
+        }
     }
 
     private var statusBadge: some View {
@@ -481,6 +497,84 @@ struct TunnelRowView: View {
 
     private var tunnelSummary: String {
         AppStrings.tunnelSummary(tunnel)
+    }
+}
+
+struct TunnelConnectionDetailsView: View {
+    @EnvironmentObject private var manager: TunnelManager
+    @Environment(\.dismiss) private var dismiss
+    let tunnel: TunnelConfig
+    @State private var didCopyDiagnostics = false
+
+    var body: some View {
+        let details = manager.connectionDetails(for: tunnel)
+        VStack(alignment: .leading, spacing: 14) {
+            Text(AppStrings.connectionDetails())
+                .font(.title2.weight(.semibold))
+            Text(tunnel.name)
+                .font(.headline)
+            Text(manager.status(for: tunnel).displayText())
+                .font(.caption.weight(.semibold))
+                .foregroundStyle(.secondary)
+
+            Divider()
+
+            VStack(alignment: .leading, spacing: 8) {
+                detailRow(
+                    AppStrings.diagnosticStatusChanged(),
+                    details.statusChangedAt.formatted(date: .abbreviated, time: .standard)
+                )
+                detailRow(
+                    AppStrings.diagnosticExitCode(),
+                    details.exitCode.map(String.init) ?? AppStrings.diagnosticNone()
+                )
+                detailRow(AppStrings.diagnosticRetryCount(), String(details.retryCount))
+                detailRow(
+                    AppStrings.diagnosticNextRetry(),
+                    details.nextRetryAt?.formatted(date: .abbreviated, time: .standard)
+                        ?? AppStrings.diagnosticNone()
+                )
+                detailRow(
+                    AppStrings.diagnosticErrorCategory(),
+                    details.errorCategory.map { AppStrings.failureCategory($0) }
+                        ?? AppStrings.diagnosticNone()
+                )
+                detailRow(
+                    AppStrings.diagnosticErrorSummary(),
+                    details.errorSummary.isEmpty ? AppStrings.diagnosticNone() : details.errorSummary
+                )
+            }
+
+            Divider()
+
+            HStack {
+                Button(didCopyDiagnostics ? AppStrings.diagnosticsCopied() : AppStrings.copyDiagnostics()) {
+                    manager.copyDiagnostics(for: tunnel)
+                    didCopyDiagnostics = true
+                    Task {
+                        try? await Task.sleep(for: .seconds(2))
+                        didCopyDiagnostics = false
+                    }
+                }
+                Spacer()
+                Button(AppStrings.done()) { dismiss() }
+                    .keyboardShortcut(.defaultAction)
+            }
+        }
+        .padding(20)
+        .frame(width: 420)
+    }
+
+    private func detailRow(_ label: String, _ value: String) -> some View {
+        HStack(alignment: .firstTextBaseline, spacing: 8) {
+            Text(label)
+                .foregroundStyle(.secondary)
+            Spacer()
+            Text(value)
+                .multilineTextAlignment(.trailing)
+                .textSelection(.enabled)
+        }
+        .font(.caption)
     }
 }
 

@@ -30,12 +30,15 @@ Key file responsibilities:
 - `TunnelConfigStore.swift`: local JSON load/save for tunnel definitions.
 - `TunnelRecoveryPolicy.swift`: connection lifecycle, stop reasons, run generations, retry backoff, and SSH failure classification.
 - `TunnelDiagnosticSanitizer.swift`: redacts SSH hosts, non-loopback targets, and the user home directory before diagnostics are stored or displayed.
+- `TunnelDiagnostics.swift`: stable error categories, failure-cycle notification deduplication, and structured reports that accept no configuration endpoints.
+- `ConnectionNotificationSettings.swift`: default-disabled notification settings and an independent atomic store.
 - `PortStatusParser.swift`: parses `lsof` output to detect local listening ports.
 - `SSHConfigOutputParser.swift`: parses `ssh -G` output to confirm SSH Config mode has a `LocalForward`.
 - `ManagedProcessTerminator.swift`: terminates app-managed processes and waits briefly for exit.
 - `TunnelSummary.swift`: summarizes running, failed, and total tunnel counts.
 - `TunnelManager.swift`: manages tunnel lists, runtime state, SSH `Process` lifecycle, and validation before saving.
 - `SystemRecoveryMonitor.swift`: bridges network path, sleep, and wake events through `NWPathMonitor` and `NSWorkspace` notifications.
+- `ConnectionNotificationController.swift`: requests permission only after opt-in and isolates permission, delivery, and persistence failures from tunnel lifecycle state.
 - `AppStrings.swift`: App-layer localization entry point for menu text, buttons, forms, help text, and app-generated errors; packaged apps load SwiftPM resource bundles from `Contents/Resources`, while development and tests fall back to `Bundle.module`.
 - `TunnelMenuView.swift`: menu bar UI for adding, editing, starting, stopping, opening URLs, and deleting tunnels.
 - `TunnelModeFormFields.swift`: centralizes which form fields each tunnel mode should display.
@@ -254,6 +257,12 @@ Each runtime record owns an independent `TunnelRecoveryState`, SSH process, retr
 
 Automatic reconnection is disabled by default. When enabled, recoverable failures use 2, 5, 10, 30, and 60 second backoff intervals capped at 60 seconds; five minutes of stable operation resets the sequence. Authentication failures, host-key failures, listener conflicts, forwarding failures, and configuration errors are permanent failures. A transient `ssh -G` timeout during automatic recovery is retried at the next interval, while a manual start reports it immediately. Network loss or sleep cancels pending retry and stability tasks. Recovery waits two seconds for network stability and starts at most one replacement process. Stop advances the generation and cancels all pending work even while connecting or waiting.
 
+## Connection Notification And Diagnostic Boundary
+
+The notification controller never participates in SSH start or stop decisions. Notifications are disabled by default, and `UNUserNotificationCenter` permission is requested only when the user enables the setting. Denial, revocation, and delivery failures update settings feedback without changing tunnel state. The notification-center delegate explicitly presents banners, Notification Center entries, and sounds while the app is in the foreground. Each runtime owns a `TunnelNotificationCycle`: the first failure emits one notification, and a process that remains alive for two seconds emits one recovery notification and ends the cycle. Exiting during that confirmation window cancels the pending recovery, so later backoff failures do not produce a notification storm. User stop, edit, delete, and app quit invalidate the run generation and reset the cycle, so their process callbacks cannot emit disconnection notifications.
+
+Runtime details retain only a sanitized summary, status-change time, exit code, retry count, next retry time, and stable error category. `TunnelDiagnosticReport` builds clipboard output from an explicit field allowlist and has no inputs for configuration names, endpoints, or raw stderr.
+
 ## Test Strategy
 
 `Tests/SSHTunnelCoreTests` covers core logic:
@@ -265,6 +274,7 @@ Automatic reconnection is disabled by default. When enabled, recoverable failure
 - Listening-port parsing from `lsof` output.
 - Runtime status resolution.
 - Automatic-reconnection backoff and reset, stop reasons, network and sleep pauses, stale callbacks, and permanent-failure classification.
+- Notification defaults and private-file permissions, permission-denial isolation, failure-cycle deduplication, error categories, and the diagnostic field allowlist.
 - English and Simplified Chinese display text for runtime statuses, summaries, and validation errors.
 - Managed process termination.
 - Tunnel summary counts.

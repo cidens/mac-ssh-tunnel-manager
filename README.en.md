@@ -17,6 +17,7 @@ The app name is `SSH Tunnel Manager`; the SwiftPM executable target remains `ssh
 - Stores tunnel definitions as local JSON.
 - Supports tags, favorites, search, and sorting for organizing tunnel configurations.
 - Supports per-tunnel automatic reconnection with network and sleep recovery.
+- Supports opt-in failure/recovery notifications and copyable diagnostics that omit configuration names, hosts, target ports, and raw stderr.
 - Does not store server passwords or private keys.
 - Ships with no built-in tunnel presets.
 - Supports English and Simplified Chinese UI, following the macOS system language.
@@ -93,6 +94,7 @@ swift test
 - [Troubleshooting](docs/troubleshooting.en.md)
 - [Release process](docs/release.en.md)
 - [Automatic reconnection validation](docs/validation-auto-reconnect.md)
+- [Connection notification and diagnostics validation](docs/validation-connection-notifications.md)
 - [Changelog](CHANGELOG.en.md)
 - [Contributing](CONTRIBUTING.en.md)
 - [Code of Conduct](CODE_OF_CONDUCT.md)
@@ -126,6 +128,12 @@ Each tunnel can include these fields:
 
 Legacy JSON without organization or automatic-reconnection fields uses compatible defaults. When every configuration lacks `manualOrder`, the original JSON array order becomes the initial manual order.
 
+Connection-notification settings are stored separately at:
+
+```text
+~/Library/Application Support/ssh-tunnel-manager/connection-notifications.json
+```
+
 The app starts with an empty tunnel list. Add tunnels from the menu bar UI.
 
 Before the first Remote Forward configuration is saved, an existing `tunnels.json` is copied byte-for-byte to:
@@ -143,6 +151,12 @@ The main panel supports combined name, tag, mode, SSH Host or SSH Config alias, 
 Automatic reconnection is configured independently for each tunnel and is disabled by default. Recoverable SSH failures retry after 2, 5, 10, 30, and 60 seconds, remaining capped at 60 seconds; five minutes of stable operation resets the sequence.
 
 Retries pause while the network is offline or the Mac is asleep. After network recovery or wake, the app waits two seconds for stability and resumes only once. Clicking Stop while connecting, waiting for the network, or waiting to retry cancels the run intent and all pending work. Authentication failures, host-key failures, listener conflicts, and configuration errors do not retry automatically. A transient `ssh -G` timeout during automatic recovery proceeds to the next backoff interval, while the same timeout during a manual start is reported immediately.
+
+## Connection Notifications And Diagnostics
+
+Connection notifications are disabled by default. The app requests macOS notification permission only when the user enables them. Permission denial does not affect tunnel operation. Each continuous failure cycle emits at most one failure notification and one recovery notification after SSH has remained running for two seconds. Notifications remain visible while the panel is open. User-initiated stop, edit, delete, or app quit actions do not emit disconnection notifications.
+
+Connection Details shows the status-change time, exit code, retry count, next retry time, error category, and sanitized error summary. Copy Diagnostics includes only the app and macOS versions, architecture, tunnel mode, status, timestamps, exit code, retry data, and error category. It excludes configuration names, hosts or IPs, usernames, target ports, private-key paths, complete SSH commands, and raw stderr.
 
 ## Usage
 

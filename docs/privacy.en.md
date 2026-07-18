@@ -21,6 +21,8 @@ The configuration may contain:
 - SSH Config Host names.
 - Optional open URLs.
 
+Connection-notification settings are stored in `connection-notifications.json` in the same Application Support directory. The file contains only a schema version and the enabled flag. The app requests macOS notification permission only when the user enables notifications, and notification content omits tunnel names, hosts, addresses, and ports.
+
 Before the first Remote Forward configuration is saved, the app may create `tunnels.json.pre-remote-forward.bak` in the same directory. It is a local recovery copy containing the same categories of information as `tunnels.json` and is not uploaded.
 
 The app does not store:
@@ -44,6 +46,8 @@ Remote Forward mode asks the SSH server to create a remote listener and forwards
 The app only tracks and stops SSH processes that it started. It does not scan, attach to, or terminate SSH sessions started manually by the user.
 
 ## Privacy Reminder For Public Feedback
+
+Copy Diagnostics generates a structured shareable summary containing versions, system architecture, tunnel mode, state, timestamps, exit code, retry data, and error category. It excludes configuration names, hosts or IPs, usernames, target ports, private-key paths, complete SSH commands, and raw stderr.
 
 Before submitting issues, screenshots, or logs, sanitize:
 

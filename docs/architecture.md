@@ -30,6 +30,8 @@
 - `TunnelConfigStore.swift`：把隧道配置读写到本机 JSON 文件。
 - `TunnelRecoveryPolicy.swift`：定义连接生命周期、停止原因、运行代次、退避策略和 SSH 故障分类。
 - `TunnelDiagnosticSanitizer.swift`：在保存或展示诊断前替换 SSH Host、非回环目标和用户主目录。
+- `TunnelDiagnostics.swift`：定义稳定错误类别、通知周期去重状态和不含配置端点的结构化诊断报告。
+- `ConnectionNotificationSettings.swift`：定义默认关闭的通知设置及独立原子存储。
 - `GlobalShortcutSettings.swift`：定义全局快捷键、修饰键、默认组合和设置校验。
 - `GlobalShortcutSettingsStore.swift`：把快捷键设置原子写入独立 JSON 文件。
 - `PortStatusParser.swift`：解析 `lsof` 输出，判断本地端口是否监听。
@@ -38,6 +40,7 @@
 - `TunnelSummary.swift`：汇总运行中、异常和总隧道数量。
 - `TunnelManager.swift`：管理配置列表、筛选排序、运行时状态、SSH `Process` 生命周期和保存前校验。
 - `SystemRecoveryMonitor.swift`：通过 `NWPathMonitor` 和 `NSWorkspace` 通知桥接网络、睡眠与唤醒事件。
+- `ConnectionNotificationController.swift`：只在用户启用时请求通知权限，并隔离权限、投递和设置失败，不影响隧道生命周期。
 - `AppDelegate.swift`：组装单一 `TunnelManager`、菜单展示和全局快捷键生命周期。
 - `MenuPresentationCoordinator.swift`：创建状态栏项目和可编程控制的主界面面板。
 - `GlobalShortcutSystem.swift`：封装 macOS 快捷键注册、注销、事件回调和系统快捷键查询。
@@ -138,6 +141,8 @@ zip 包使用本机 ad-hoc 签名，不包含 Apple Developer ID notarization，
 ```
 
 字段包括设置版本、是否启用、物理键码和修饰键集合。文件不存在时使用默认 `⌃⌥⌘T` 并启用；异常文件不会自动覆盖，应用使用默认值运行并在设置界面提示。两个配置文件都使用原子写入，目录权限为 `0700`，文件权限为 `0600`。
+
+连接通知使用独立的 `connection-notifications.json`，只保存设置版本和是否启用，默认关闭。该文件与快捷键设置使用相同的原子写入和 `0600` 权限，不与隧道配置或快捷键设置互相覆盖。
 
 ## 菜单展示与全局快捷键
 
@@ -310,6 +315,12 @@ ssh -G sshConfigName
 
 自动重连默认关闭。启用后，可恢复故障使用 2、5、10、30、60 秒退避，60 秒封顶，稳定运行 5 分钟后清零。认证失败、Host Key 校验失败、端口冲突、转发建立失败和配置错误属于不可重试错误；自动恢复期间的 `ssh -G` 瞬时超时视为可恢复预检查故障并进入下一档退避，手工启动遇到相同超时仍明确失败。网络离线或系统睡眠会取消待执行的重试与稳定计时；恢复后等待网络稳定 2 秒，如果原 SSH 进程仍在运行则继续跟踪，否则仅启动一次新进程。用户在正在连接、等待网络或等待重连阶段停止时会推进运行代次并取消全部任务。
 
+## 连接通知与诊断边界
+
+通知控制器不参与 SSH 启停决策。通知默认关闭，只有从设置界面启用时才调用 `UNUserNotificationCenter` 请求权限；拒绝、撤销或投递失败只更新设置提示，不改变隧道状态。系统通知中心委托在应用前台时明确展示横幅、通知中心记录和提示音。每条运行时记录使用 `TunnelNotificationCycle` 标记连续故障周期，首次故障发送一次失败通知；SSH 进程连续存活 2 秒后发送一次恢复通知并结束该周期，若进程在确认窗口内退出则取消待发送的恢复通知，后续退避失败不会重复通知。用户停止、编辑、删除和应用退出都会使运行代次失效并重置通知周期，因此进程终止回调不会产生掉线通知。
+
+运行时只保存已脱敏错误摘要、状态变化时间、退出码、重试次数、下次重试时间和稳定错误类别。复制诊断由 `TunnelDiagnosticReport` 从白名单字段生成，不接受配置名称、端点或原始 stderr 作为输入，从结构上阻止这些内容进入剪贴板。
+
 ## 测试策略
 
 `Tests/SSHTunnelCoreTests` 覆盖纯逻辑层：
@@ -324,6 +335,7 @@ ssh -G sshConfigName
 - `lsof` 输出中的监听端口解析。
 - 运行时状态判定。
 - 自动重连退避、稳定运行重置、停止原因、网络与睡眠暂停、过期回调和不可重试故障分类。
+- 通知默认值、私有文件权限、权限拒绝隔离、故障周期去重、错误类别和诊断字段白名单。
 - 运行状态、状态摘要和校验错误的中英文展示。
 - 托管进程终止等待。
 - 隧道统计汇总。

@@ -28,6 +28,31 @@ import Testing
     #expect(AppStrings.sortManual(language: "zh-Hans") == "手工排序")
 }
 
+@Test func notificationAndDiagnosticCopyLocalizesToEnglishAndChinese() {
+    #expect(AppStrings.settingsTitle(language: "en") == "Settings")
+    #expect(AppStrings.settingsTitle(language: "zh-Hans") == "设置")
+    #expect(AppStrings.notificationSettingsTitle(language: "en") == "Connection Notifications")
+    #expect(AppStrings.notificationSettingsTitle(language: "zh-Hans") == "连接通知")
+    #expect(AppStrings.notificationPermissionDenied(language: "en").contains("System Settings > Notifications"))
+    #expect(AppStrings.notificationPermissionDenied(language: "zh-Hans").contains("系统设置 > 通知"))
+    #expect(AppStrings.notificationFailureBody(
+        category: .network,
+        retryCount: 2,
+        willRetry: true,
+        language: "en"
+    ) == "Network error. Automatic recovery remains active (failure 2).")
+    #expect(AppStrings.notificationFailureBody(
+        category: .network,
+        retryCount: 2,
+        willRetry: true,
+        language: "zh-Hans"
+    ) == "网络错误，自动恢复仍在进行（第 2 次失败）。")
+    #expect(AppStrings.connectionDetails(language: "en") == "Connection Details")
+    #expect(AppStrings.connectionDetails(language: "zh-Hans") == "连接详情")
+    #expect(AppStrings.failureCategory(.authentication, language: "en") == "Authentication")
+    #expect(AppStrings.failureCategory(.authentication, language: "zh-Hans") == "认证")
+}
+
 @Test func remoteBindWarningIncludesConfirmedEndpointAndGatewayPorts() {
     let english = AppStrings.riskyRemoteBindMessage(host: "*", port: 18_080, language: "en")
     let chinese = AppStrings.riskyRemoteBindMessage(host: "*", port: 18_080, language: "zh-Hans")

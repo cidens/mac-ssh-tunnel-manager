@@ -8,14 +8,20 @@ struct GlobalShortcutSettingsView: View {
     }
 
     @EnvironmentObject private var controller: GlobalShortcutController
+    @EnvironmentObject private var notificationController: ConnectionNotificationController
     @Environment(\.dismiss) private var dismiss
     @State private var draft = GlobalShortcutSettings.defaultSettings
+    @State private var notificationDraft = ConnectionNotificationSettings.defaultSettings.isEnabled
     @State private var saveFailure: SaveFailure?
+    @State private var isSaving = false
 
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
-            Text(AppStrings.shortcutSettingsTitle())
+            Text(AppStrings.settingsTitle())
                 .font(.title2.weight(.semibold))
+
+            Text(AppStrings.shortcutSettingsTitle())
+                .font(.headline)
 
             Toggle(AppStrings.shortcutEnabled(), isOn: $draft.isEnabled)
 
@@ -111,27 +117,50 @@ struct GlobalShortcutSettingsView: View {
 
             Divider()
 
+            VStack(alignment: .leading, spacing: 8) {
+                Text(AppStrings.notificationSettingsTitle())
+                    .font(.headline)
+                Toggle(
+                    AppStrings.notificationEnabled(),
+                    isOn: $notificationDraft
+                )
+                Text(AppStrings.notificationPermissionHelp())
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+                if notificationDraft,
+                   notificationController.authorizationState == .denied {
+                    Text(AppStrings.notificationPermissionDenied())
+                        .font(.caption)
+                        .foregroundStyle(.orange)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+                if !notificationController.errorMessage.isEmpty {
+                    Text(notificationController.errorMessage)
+                        .font(.caption)
+                        .foregroundStyle(.red)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+            }
+
+            Divider()
+
             HStack {
                 Button(AppStrings.shortcutRestoreDefault()) {
                     saveFailure = nil
                     draft.isEnabled = true
                     draft.shortcut = .defaultShortcut
+                    notificationDraft = ConnectionNotificationSettings.defaultSettings.isEnabled
                 }
+                .disabled(isSaving)
                 Spacer()
                 Button(AppStrings.cancel()) {
                     controller.cancelRecording()
                     dismiss()
                 }
+                .disabled(isSaving)
                 Button(AppStrings.save()) {
-                    let candidate = draft
-                    if controller.save(candidate) {
-                        draft = controller.settings
-                        saveFailure = nil
-                        controller.cancelRecording()
-                        dismiss()
-                    } else if let issue = controller.issue {
-                        saveFailure = SaveFailure(candidate: candidate, issue: issue)
-                    }
+                    saveSettings()
                 }
                 .keyboardShortcut(.defaultAction)
                 .disabled(!canSave)
@@ -141,7 +170,9 @@ struct GlobalShortcutSettingsView: View {
         .frame(width: 420)
         .onAppear {
             draft = controller.settings
+            notificationDraft = notificationController.isEnabled
             saveFailure = nil
+            isSaving = false
             controller.cancelRecording()
         }
         .onDisappear {
@@ -163,10 +194,40 @@ struct GlobalShortcutSettingsView: View {
     }
 
     private var canSave: Bool {
-        guard validationMessage == nil else {
-            return false
+        validationMessage == nil && hasUnsavedChanges && !isSaving
+    }
+
+    private var hasUnsavedChanges: Bool {
+        draft != controller.settings
+            || controller.hasInvalidStoredSettings
+            || notificationDraft != notificationController.isEnabled
+    }
+
+    private func saveSettings() {
+        let shortcutCandidate = draft
+        if shortcutCandidate != controller.settings || controller.hasInvalidStoredSettings {
+            guard controller.save(shortcutCandidate) else {
+                if let issue = controller.issue {
+                    saveFailure = SaveFailure(candidate: shortcutCandidate, issue: issue)
+                }
+                return
+            }
+            draft = controller.settings
         }
-        return draft != controller.settings || controller.hasInvalidStoredSettings
+
+        saveFailure = nil
+        controller.cancelRecording()
+        isSaving = true
+        Task {
+            if notificationDraft != notificationController.isEnabled {
+                guard await notificationController.setEnabled(notificationDraft) else {
+                    isSaving = false
+                    return
+                }
+            }
+            isSaving = false
+            dismiss()
+        }
     }
 
     private var validationMessage: String? {
