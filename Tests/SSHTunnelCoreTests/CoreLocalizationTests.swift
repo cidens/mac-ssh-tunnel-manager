@@ -31,12 +31,14 @@ import Testing
             == "本地端口必须在 1 到 65535 之间"
     )
     #expect(
-        TunnelValidationError.sshConfigMissingLocalForward("example-service").description(language: "en")
-            == "example-service must be an SSH config Host with at least one LocalForward"
+        TunnelValidationError.sshConfigMissingForwardingDirective("example-service")
+            .description(language: "en")
+            == "example-service must be an SSH Config Host with at least one LocalForward, RemoteForward, or DynamicForward"
     )
     #expect(
-        TunnelValidationError.sshConfigMissingLocalForward("example-service").description(language: "zh-Hans")
-            == "example-service 必须是至少包含一条 LocalForward 的 SSH Config Host"
+        TunnelValidationError.sshConfigMissingForwardingDirective("example-service")
+            .description(language: "zh-Hans")
+            == "example-service 必须是至少包含一条 LocalForward、RemoteForward 或 DynamicForward 的 SSH Config Host"
     )
     #expect(
         TunnelValidationError.sshHostContainsForwardingDirectives("example-bastion").description(language: "en")

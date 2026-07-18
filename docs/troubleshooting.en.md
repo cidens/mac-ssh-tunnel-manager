@@ -29,7 +29,7 @@ Fix options:
 
 ## The App Warns That A Local Listener May Be Exposed
 
-When Local Forward, Dynamic SOCKS, or an SSH Config `LocalForward` uses a non-loopback bind address, the app asks for confirmation before saving or starting.
+When Local Forward, Dynamic SOCKS, or a resolved SSH Config local, remote, or dynamic listener uses a non-loopback bind address, the app asks for confirmation before importing, saving, or starting.
 
 The default recommendation is:
 
@@ -51,9 +51,22 @@ Replace `<local-port>` with the local port configured in the app.
 
 If a command still connects directly to the target service, it usually means the command does not read the proxy environment variable or the app has its own proxy setting.
 
-## SSH Config Mode Reports Missing LocalForward
+## SSH Config Import Does Not List A Host
 
-SSH Config mode requires the selected Host to contain at least one `LocalForward`. Example:
+Import lists only explicit Hosts from `~/.ssh/config` and accessible `Include` files. It does not turn `Host *`, `Host *.example`, or negated patterns into concrete aliases automatically.
+
+Fix options:
+
+- Check the top of the import panel for unreadable Include files, invalid syntax, or traversal-limit warnings.
+- Confirm that each Include path exists and is readable by the current user.
+- For a wildcard Host, expand “Concrete alias for wildcard Host (optional)”, enter the complete alias you actually use, and preview it.
+- If an explicit Host is still missing, close and reopen the import panel to rescan the files.
+
+Entering an alias adds only a preview candidate; it does not create or modify SSH Config.
+
+## SSH Config Mode Reports A Missing Forwarding Directive
+
+SSH Config mode requires the selected Host to contain at least one `LocalForward`, `RemoteForward`, or `DynamicForward`. Example:
 
 ```sshconfig
 Host example-service
@@ -65,14 +78,14 @@ Host example-service
 Check the final OpenSSH configuration:
 
 ```bash
-ssh -G example-service | grep -i '^localforward '
+ssh -G example-service | grep -Ei '^(localforward|remoteforward|dynamicforward) '
 ```
 
 If there is no output, the app rejects saving or starting that configuration.
 
 ## SSH Config Uses ProxyJump Or Match exec
 
-The app runs `ssh -G <Host>` before saving to validate the config. Complex configurations may time out because of `Match exec`, `ProxyJump`, or slow DNS.
+The app runs `ssh -G <Host>` for previews and before saving. Import warns first when static scanning finds `Match exec`; complex configurations may still exceed the 10-second timeout because of `Match exec`, `ProxyJump`, or slow DNS.
 
 Fix options:
 

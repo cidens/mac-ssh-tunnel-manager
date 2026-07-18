@@ -104,7 +104,7 @@ open -a 'SSH Tunnel Manager'
 - 手动转发：应用生成 `ssh -N -L localHost:localPort:remoteHost:remotePort sshHost`。
 - 远程转发：应用生成 `ssh -N -R remoteHost:remotePort:localHost:localPort sshHost`；远端非回环监听需要风险确认，实际范围受服务端 `GatewayPorts` 影响。
 - 动态 SOCKS：应用生成 `ssh -N -D localHost:localPort sshHost`，适合临时给 Git、curl 或浏览器等工具指定 SOCKS 代理。
-- SSH Config：应用只传入 `sshConfigName`，由用户自己的 `~/.ssh/config` 提供 `LocalForward`。
+- SSH Config：应用只传入 `sshConfigName`，由用户自己的 `~/.ssh/config` 提供 `LocalForward`、`RemoteForward` 或 `DynamicForward`；只读导入只保存 Host 引用。
 
 示例文档中只使用 `example-bastion`、`example-service` 和 `203.0.113.10` 这类脱敏值；分发给他人前不要把自己的真实 Host 别名、内网 IP、用户名或私钥路径写进公开文档。
 

@@ -93,6 +93,31 @@ import SSHTunnelCore
 }
 
 @MainActor
+@Test func addSSHConfigTunnelAllowsRemoteAndDynamicForwarding() throws {
+    let directory = try temporaryDirectory()
+    let resolver = StubSSHConfigResolver(results: [
+        "remote-service": .resolved("remoteforward localhost:18080 127.0.0.1:8080\n"),
+        "socks-service": .resolved("dynamicforward 127.0.0.1:1080\n"),
+    ])
+    let manager = TunnelManager(
+        store: TunnelConfigStore(configURL: directory.appending(path: "tunnels.json")),
+        sshConfigResolver: resolver
+    )
+    defer { manager.prepareForApplicationTermination() }
+
+    for alias in ["remote-service", "socks-service"] {
+        var draft = TunnelDraft()
+        draft.mode = .sshConfig
+        draft.name = alias
+        draft.sshConfigName = alias
+        #expect(manager.addTunnel(draft))
+    }
+
+    #expect(manager.tunnels.map(\.sshConfigName) == ["remote-service", "socks-service"])
+    #expect(resolver.requestedNames == ["remote-service", "socks-service"])
+}
+
+@MainActor
 @Test func addDynamicForwardRequiresConfirmationForNonLoopbackBind() throws {
     let directory = try temporaryDirectory()
     let resolver = StubSSHConfigResolver(results: [
@@ -325,7 +350,44 @@ import SSHTunnelCore
     )
 }
 
-private final class StubSSHConfigResolver: SSHConfigResolving {
+@MainActor
+@Test func batchImportStoresUniqueSSHConfigReferencesWithoutStartingThem() throws {
+    let directory = try temporaryDirectory()
+    let store = TunnelConfigStore(configURL: directory.appending(path: "tunnels.json"))
+    try store.save([TunnelConfig(name: "Existing", sshConfigName: "existing-service", openURL: nil)])
+    let manager = TunnelManager(store: store, sshConfigResolver: StubSSHConfigResolver(results: [:]))
+    defer { manager.prepareForApplicationTermination() }
+
+    let imported = manager.importSSHConfigAliases([
+        "new-service",
+        "NEW-SERVICE",
+        "EXISTING-SERVICE",
+    ])
+
+    #expect(imported)
+    #expect(manager.tunnels.map(\.sshConfigName) == ["existing-service", "new-service"])
+    #expect(manager.tunnels.allSatisfy { !$0.isAutoReconnectEnabled })
+    #expect(manager.tunnels.allSatisfy { !manager.isManagedProcessRunning(for: $0) })
+    #expect(try store.load() == manager.tunnels)
+}
+
+@MainActor
+@Test func batchImportRollsBackWhenPersistenceFails() throws {
+    let directory = try temporaryDirectory()
+    let configURL = directory.appending(path: "tunnels.json")
+    try FileManager.default.createDirectory(at: configURL, withIntermediateDirectories: false)
+    let manager = TunnelManager(
+        store: TunnelConfigStore(configURL: configURL),
+        sshConfigResolver: StubSSHConfigResolver(results: [:])
+    )
+    defer { manager.prepareForApplicationTermination() }
+
+    #expect(!manager.importSSHConfigAliases(["new-service"]))
+    #expect(manager.tunnels.isEmpty)
+    #expect(!manager.addError.isEmpty)
+}
+
+private final class StubSSHConfigResolver: SSHConfigResolving, @unchecked Sendable {
     private let results: [String: SSHConfigResolution]
     private(set) var requestedNames: [String] = []
 

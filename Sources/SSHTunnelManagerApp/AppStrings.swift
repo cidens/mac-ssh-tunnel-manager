@@ -236,6 +236,143 @@ enum AppStrings {
         string("button.done", language: language)
     }
 
+    static func importSSHConfig(language: String? = nil) -> String {
+        string("import.sshConfig.button", language: language)
+    }
+
+    static func importSSHConfigTitle(language: String? = nil) -> String {
+        string("import.sshConfig.title", language: language)
+    }
+
+    static func importSSHConfigSubtitle(language: String? = nil) -> String {
+        string("import.sshConfig.subtitle", language: language)
+    }
+
+    static func importManualAlias(language: String? = nil) -> String {
+        string("import.manualAlias", language: language)
+    }
+
+    static func importManualAliasPlaceholder(language: String? = nil) -> String {
+        string("import.manualAlias.placeholder", language: language)
+    }
+
+    static func importManualAliasHelp(language: String? = nil) -> String {
+        string("import.manualAlias.help", language: language)
+    }
+
+    static func importAddAlias(language: String? = nil) -> String {
+        string("import.manualAlias.add", language: language)
+    }
+
+    static func importInvalidAlias(language: String? = nil) -> String {
+        string("import.error.invalidAlias", language: language)
+    }
+
+    static func importNoNewHosts(language: String? = nil) -> String {
+        string("import.error.noNewHosts", language: language)
+    }
+
+    static func importScanning(language: String? = nil) -> String {
+        string("import.scanning", language: language)
+    }
+
+    static func importEmpty(language: String? = nil) -> String {
+        string("import.empty", language: language)
+    }
+
+    static func importSelectAll(language: String? = nil) -> String {
+        string("import.selectAll", language: language)
+    }
+
+    static func importSelectNone(language: String? = nil) -> String {
+        string("import.selectNone", language: language)
+    }
+
+    static func importPreviewSelected(language: String? = nil) -> String {
+        string("import.previewSelected", language: language)
+    }
+
+    static func importSelected(_ count: Int, language: String? = nil) -> String {
+        format("import.selected", language: language, count)
+    }
+
+    static func importSelectionCount(_ count: Int, language: String? = nil) -> String {
+        format("import.selectionCount", language: language, count)
+    }
+
+    static func importMatchExecTitle(language: String? = nil) -> String {
+        string("import.matchExec.title", language: language)
+    }
+
+    static func importMatchExecMessage(language: String? = nil) -> String {
+        string("import.matchExec.message", language: language)
+    }
+
+    static func importRiskTitle(language: String? = nil) -> String {
+        string("import.risk.title", language: language)
+    }
+
+    static func importRiskMessage(language: String? = nil) -> String {
+        string("import.risk.message", language: language)
+    }
+
+    static func importDuplicate(language: String? = nil) -> String {
+        string("import.status.duplicate", language: language)
+    }
+
+    static func importNotPreviewed(language: String? = nil) -> String {
+        string("import.status.notPreviewed", language: language)
+    }
+
+    static func importResolving(language: String? = nil) -> String {
+        string("import.status.resolving", language: language)
+    }
+
+    static func importNoForwarding(language: String? = nil) -> String {
+        string("import.status.noForwarding", language: language)
+    }
+
+    static func importResolutionFailed(language: String? = nil) -> String {
+        string("import.status.failed", language: language)
+    }
+
+    static func importResolutionTimedOut(language: String? = nil) -> String {
+        string("import.status.timedOut", language: language)
+    }
+
+    static func importSource(_ path: String, line: Int, language: String? = nil) -> String {
+        format("import.source", language: language, path, line)
+    }
+
+    static func importForwardKind(_ kind: SSHConfigForwardingKind, language: String? = nil) -> String {
+        string("import.forward.\(kind.rawValue)", language: language)
+    }
+
+    static func importListener(
+        host: String,
+        port: Int?,
+        exposed: Bool,
+        language: String? = nil
+    ) -> String {
+        let endpoint = port.map { "\(host):\($0)" } ?? host
+        return format(
+            exposed ? "import.listener.exposed" : "import.listener.loopback",
+            language: language,
+            endpoint
+        )
+    }
+
+    static func importDiscoveryIssue(
+        _ issue: SSHConfigDiscoveryIssue,
+        language: String? = nil
+    ) -> String {
+        let key = "import.discovery.\(issue.kind.rawValue)"
+        if let line = issue.line {
+            return format(key + ".line", language: language, issue.sourcePath, line)
+        }
+        return format(key, language: language, issue.sourcePath)
+    }
+
     static func shortcutSettingsTitle(language: String? = nil) -> String {
         string("shortcut.settings.title", language: language)
     }

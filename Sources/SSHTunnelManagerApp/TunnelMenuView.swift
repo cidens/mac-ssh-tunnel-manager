@@ -8,6 +8,7 @@ struct TunnelMenuView: View {
     @State private var draft = TunnelDraft()
     @State private var isAdding = false
     @State private var isShowingSettings = false
+    @State private var isShowingSSHConfigImport = false
     @State private var tunnelPendingDeletion: TunnelConfig?
     @State private var searchQuery = ""
     @State private var selectedTag: String?
@@ -51,6 +52,10 @@ struct TunnelMenuView: View {
             GlobalShortcutSettingsView()
                 .environmentObject(shortcutController)
                 .environmentObject(notificationController)
+        }
+        .sheet(isPresented: $isShowingSSHConfigImport) {
+            SSHConfigImportView()
+                .environmentObject(manager)
         }
         .onChange(of: manager.riskWarning?.id) { _, warningID in
             if warningID != nil {
@@ -296,6 +301,12 @@ struct TunnelMenuView: View {
                         isAdding ? AppStrings.collapseAddForm() : AppStrings.addTunnel(),
                         systemImage: isAdding ? "chevron.up" : "plus"
                     )
+                }
+
+                Button {
+                    isShowingSSHConfigImport = true
+                } label: {
+                    Label(AppStrings.importSSHConfig(), systemImage: "square.and.arrow.down")
                 }
 
                 Spacer()

@@ -37,6 +37,8 @@ The app does not store:
 
 The app itself does not proactively connect to third-party services. When a tunnel starts, the app calls the system `/usr/bin/ssh` binary, and SSH connects according to the Host value or the user's `~/.ssh/config`.
 
+“Import SSH Config” reads `~/.ssh/config` and accessible `Include` files only to discover explicit Host aliases. It does not write those files or copy forwarding directives into app storage. Scanning does not run SSH; the import UI runs the fixed `/usr/bin/ssh -G <Host>` command only after the user requests a preview. If static scanning finds `Match exec`, the app warns before the first preview because `ssh -G` may execute its command; canceling does not invoke `ssh -G`. Importing stores only selected Host aliases in `tunnels.json` and does not connect automatically.
+
 Dynamic SOCKS mode only starts a local SOCKS listener. It does not modify system proxy settings, browser proxy settings, or Git configuration. The user decides which commands or apps send traffic through the tunnel.
 
 Remote Forward mode asks the SSH server to create a remote listener and forwards connections to a target on or reachable from the Mac. The effective listener may be affected by the server's `GatewayPorts` setting; the app does not change that setting.

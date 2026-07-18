@@ -61,7 +61,7 @@ lsof -nP -iTCP:<local-port> -sTCP:LISTEN
 
 ## 提示本地监听可能暴露
 
-当手动转发、动态 SOCKS 或 SSH Config 的 `LocalForward` 使用非回环绑定地址时，应用会在保存或启动前提示风险。
+当手动转发、动态 SOCKS 或 SSH Config 解析出的本地、远端或动态转发使用非回环绑定地址时，应用会在导入、保存或启动前提示风险。
 
 默认建议使用：
 
@@ -83,9 +83,22 @@ ALL_PROXY=socks5h://127.0.0.1:<local-port> curl https://example.com
 
 如果某个命令仍直接连接目标服务，通常说明该命令没有读取代理环境变量，或应用自身需要单独配置代理。
 
-## SSH Config 模式提示缺少 LocalForward
+## SSH Config 导入列表缺少 Host
 
-SSH Config 模式要求对应 Host 至少包含一条 `LocalForward`。示例：
+导入界面只自动列出 `~/.ssh/config` 和可访问 `Include` 文件中的明确 Host，不会把 `Host *`、`Host *.example` 或否定模式直接当成可导入别名。
+
+处理方式：
+
+- 检查导入面板顶部是否提示 Include 不可读、语法无效或达到遍历限制。
+- 确认 Include 路径存在，并且当前用户有读取权限。
+- 对通配 Host 展开“通配 Host 的具体别名（可选）”，填写实际使用的完整别名后再预览。
+- 如果明确 Host 仍未出现，关闭并重新打开导入面板以重新扫描文件。
+
+手工填写只会增加一个待预览候选项，不会创建或修改 SSH Config。
+
+## SSH Config 模式提示缺少转发指令
+
+SSH Config 模式要求对应 Host 至少包含一条 `LocalForward`、`RemoteForward` 或 `DynamicForward`。示例：
 
 ```sshconfig
 Host example-service
@@ -97,14 +110,14 @@ Host example-service
 可以用以下命令检查 OpenSSH 最终解析结果：
 
 ```bash
-ssh -G example-service | grep -i '^localforward '
+ssh -G example-service | grep -Ei '^(localforward|remoteforward|dynamicforward) '
 ```
 
 如果没有输出，应用会拒绝保存或启动该配置。
 
 ## SSH Config 使用了 ProxyJump 或 Match exec
 
-应用会运行 `ssh -G <Host>` 做保存前校验。复杂配置可能因为 `Match exec`、`ProxyJump` 或 DNS 较慢导致校验超时。
+应用会运行 `ssh -G <Host>` 做预览及保存前校验。导入界面静态发现 `Match exec` 后会先要求确认；复杂配置仍可能因为 `Match exec`、`ProxyJump` 或 DNS 较慢导致 10 秒校验超时。
 
 处理方式：
 
