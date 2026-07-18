@@ -267,3 +267,60 @@ import Testing
         try SSHCommandBuilder().validate(tunnel)
     }
 }
+
+@Test func buildsSSHRemoteForwardArgumentsForLoopbackIPv4IPv6AndWildcardBinds() throws {
+    let expectedBindings = [
+        ("localhost", "localhost:18080:127.0.0.1:3000"),
+        ("203.0.113.10", "203.0.113.10:18080:127.0.0.1:3000"),
+        ("[::1]", "[::1]:18080:127.0.0.1:3000"),
+        ("*", "*:18080:127.0.0.1:3000")
+    ]
+
+    for (bindHost, expectedArgument) in expectedBindings {
+        let tunnel = remoteForwardTunnel(remoteBindHost: bindHost)
+        try SSHCommandBuilder().validate(tunnel)
+        let command = SSHCommandBuilder().buildStartCommand(for: tunnel)
+
+        #expect(command.executable == "/usr/bin/ssh")
+        #expect(command.arguments == [
+            "-N",
+            "-o", "ExitOnForwardFailure=yes",
+            "-o", "ServerAliveInterval=30",
+            "-R", expectedArgument,
+            "example-bastion"
+        ])
+    }
+}
+
+@Test func remoteForwardRejectsInjectedHostsAndInvalidPorts() {
+    let invalidTunnels = [
+        remoteForwardTunnel(remoteBindHost: "localhost;touch"),
+        remoteForwardTunnel(localTargetHost: "127.0.0.1|cat"),
+        remoteForwardTunnel(remotePort: 0),
+        remoteForwardTunnel(remotePort: 65_536),
+        remoteForwardTunnel(localPort: -1)
+    ]
+
+    for tunnel in invalidTunnels {
+        #expect(throws: TunnelValidationError.self) {
+            try SSHCommandBuilder().validate(tunnel)
+        }
+    }
+}
+
+private func remoteForwardTunnel(
+    remoteBindHost: String = "localhost",
+    remotePort: Int = 18_080,
+    localTargetHost: String = "127.0.0.1",
+    localPort: Int = 3_000
+) -> TunnelConfig {
+    TunnelConfig(
+        name: "Example Reverse",
+        sshHost: "example-bastion",
+        remoteBindHost: remoteBindHost,
+        remotePort: remotePort,
+        localTargetHost: localTargetHost,
+        localPort: localPort,
+        openURL: nil
+    )
+}

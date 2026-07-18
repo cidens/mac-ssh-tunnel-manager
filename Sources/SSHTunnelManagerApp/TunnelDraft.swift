@@ -2,7 +2,13 @@ import Foundation
 import SSHTunnelCore
 
 struct TunnelDraft {
-    var mode: TunnelMode = .localForward
+    var mode: TunnelMode = .localForward {
+        didSet {
+            if mode == .remoteForward && oldValue != .remoteForward {
+                remoteHost = "localhost"
+            }
+        }
+    }
     var name = ""
     var sshHost = ""
     var localHost = ""
@@ -22,7 +28,7 @@ struct TunnelDraft {
         tags = tunnel.tags.joined(separator: ", ")
 
         switch tunnel.mode {
-        case .localForward:
+        case .localForward, .remoteForward:
             sshHost = tunnel.sshHost
             localHost = tunnel.localHost
             localPort = String(tunnel.localPort)
@@ -61,6 +67,27 @@ struct TunnelDraft {
                 name: name.trimmingCharacters(in: .whitespacesAndNewlines),
                 sshHost: sshHost.trimmingCharacters(in: .whitespacesAndNewlines),
                 localHost: localHost.trimmingCharacters(in: .whitespacesAndNewlines),
+                localPort: localPortNumber,
+                openURL: url
+            )
+            config.tags = normalizedTags
+            return config
+        case .remoteForward:
+            guard let remotePortNumber = Int(remotePort.trimmingCharacters(in: .whitespacesAndNewlines)) else {
+                throw TunnelValidationError.invalidPort("remotePort")
+            }
+            guard let localPortNumber = Int(localPort.trimmingCharacters(in: .whitespacesAndNewlines)) else {
+                throw TunnelValidationError.invalidPort("localPort")
+            }
+            let url = try TunnelInputParser.optionalURL(from: openURL)
+
+            var config = TunnelConfig(
+                id: id,
+                name: name.trimmingCharacters(in: .whitespacesAndNewlines),
+                sshHost: sshHost.trimmingCharacters(in: .whitespacesAndNewlines),
+                remoteBindHost: remoteHost.trimmingCharacters(in: .whitespacesAndNewlines),
+                remotePort: remotePortNumber,
+                localTargetHost: localHost.trimmingCharacters(in: .whitespacesAndNewlines),
                 localPort: localPortNumber,
                 openURL: url
             )

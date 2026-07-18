@@ -2,6 +2,7 @@ import Foundation
 
 public enum TunnelMode: String, Codable, Equatable, Sendable {
     case localForward
+    case remoteForward
     case dynamicForward
     case sshConfig
 }
@@ -42,6 +43,32 @@ public struct TunnelConfig: Codable, Equatable, Identifiable, Sendable {
         self.localHost = localHost
         self.localPort = localPort
         self.remoteHost = remoteHost
+        self.remotePort = remotePort
+        self.sshConfigName = nil
+        self.openURL = openURL
+        self.tags = []
+        self.isFavorite = false
+        self.manualOrder = nil
+        self.lastUsedAt = nil
+    }
+
+    public init(
+        id: UUID = UUID(),
+        name: String,
+        sshHost: String,
+        remoteBindHost: String,
+        remotePort: Int,
+        localTargetHost: String,
+        localPort: Int,
+        openURL: URL?
+    ) {
+        self.id = id
+        self.mode = .remoteForward
+        self.name = name
+        self.sshHost = sshHost
+        self.localHost = localTargetHost
+        self.localPort = localPort
+        self.remoteHost = remoteBindHost
         self.remotePort = remotePort
         self.sshConfigName = nil
         self.openURL = openURL
@@ -126,7 +153,7 @@ public struct TunnelConfig: Codable, Equatable, Identifiable, Sendable {
         lastUsedAt = try container.decodeIfPresent(Date.self, forKey: .lastUsedAt)
 
         switch mode {
-        case .localForward:
+        case .localForward, .remoteForward:
             sshHost = try container.decode(String.self, forKey: .sshHost)
             localHost = try container.decode(String.self, forKey: .localHost)
             localPort = try container.decode(Int.self, forKey: .localPort)
@@ -162,7 +189,7 @@ public struct TunnelConfig: Codable, Equatable, Identifiable, Sendable {
         try container.encodeIfPresent(lastUsedAt, forKey: .lastUsedAt)
 
         switch mode {
-        case .localForward:
+        case .localForward, .remoteForward:
             try container.encode(sshHost, forKey: .sshHost)
             try container.encode(localHost, forKey: .localHost)
             try container.encode(localPort, forKey: .localPort)

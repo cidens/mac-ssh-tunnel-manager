@@ -2,7 +2,7 @@
 
 [English](README.en.md) | 中文
 
-用于管理 SSH 本地端口转发和动态 SOCKS 隧道的 macOS 菜单栏应用。
+用于管理 SSH 本地端口转发、远程端口转发和动态 SOCKS 隧道的 macOS 菜单栏应用。
 
 当前版本：`0.3.2`
 
@@ -137,6 +137,12 @@ swift test
 
 旧版 JSON 不包含上述组织字段时，标签和收藏使用默认值，并以原 JSON 数组顺序作为初始手工顺序。
 
+首次保存远程转发配置前，如果已经存在旧版 `tunnels.json`，应用会原样创建一次性恢复备份：
+
+```text
+~/Library/Application Support/ssh-tunnel-manager/tunnels.json.pre-remote-forward.bak
+```
+
 ## 配置查找与排序
 
 主界面支持：
@@ -188,6 +194,21 @@ SSH Host：example-bastion
 
 如果本地监听地址不是回环地址，保存或启动时应用会先提示可能的局域网暴露风险，确认后才继续。
 
+### 远程转发
+
+适合让 SSH 服务器通过隧道访问 Mac 本机或 Mac 可访问的服务，例如临时展示本地开发服务。
+
+```text
+模式：远程转发
+名称：Example Reverse
+SSH Host：example-bastion
+远端监听：localhost 18080
+本地目标：127.0.0.1 3000
+打开 URL：留空
+```
+
+远端监听默认为 `localhost`。使用非回环地址或 `*` 时，应用会显示包含当前地址和端口的风险确认，并提示服务端 `GatewayPorts` 可能扩大实际监听范围。远程转发只显示 SSH 进程运行状态，不使用 Mac 本地的 `lsof` 推断远端端口是否监听。
+
 ### 动态 SOCKS
 
 适合临时给命令行工具或支持 SOCKS 的应用走 SSH 代理。应用只负责启动本地 SOCKS 监听，不会自动修改系统代理或 Git 配置。
@@ -235,6 +256,16 @@ SSH Config：example-service
   -o ExitOnForwardFailure=yes \
   -o ServerAliveInterval=30 \
   -L localHost:localPort:remoteHost:remotePort \
+  sshHost
+```
+
+远程转发模式下，应用从字段生成参数：
+
+```bash
+/usr/bin/ssh -N \
+  -o ExitOnForwardFailure=yes \
+  -o ServerAliveInterval=30 \
+  -R remoteHost:remotePort:localHost:localPort \
   sshHost
 ```
 

@@ -4,7 +4,7 @@ English | [中文](architecture.md)
 
 ## Project Scope
 
-`mac-ssh-tunnel-manager` is the public repository name. The app name is `SSH Tunnel Manager`; the SwiftPM executable target remains `ssh-tunnel-manager`. It is a personal macOS menu bar app for managing SSH local port forwarding and dynamic SOCKS tunnels. It does not implement the SSH protocol and does not store server passwords or private keys. Instead, it starts the system `/usr/bin/ssh` binary directly and reuses the user's existing `~/.ssh/config`, ssh-agent, and macOS Keychain behavior.
+`mac-ssh-tunnel-manager` is the public repository name. The app name is `SSH Tunnel Manager`; the SwiftPM executable target remains `ssh-tunnel-manager`. It is a personal macOS menu bar app for managing SSH local port forwarding, remote port forwarding, and dynamic SOCKS tunnels. It does not implement the SSH protocol and does not store server passwords or private keys. Instead, it starts the system `/usr/bin/ssh` binary directly and reuses the user's existing `~/.ssh/config`, ssh-agent, and macOS Keychain behavior.
 
 Current version: `0.3.2`. The version is defined in `SSHTunnelCore/AppVersion.swift`.
 
@@ -24,7 +24,7 @@ Tests are split into two test targets:
 
 Key file responsibilities:
 
-- `TunnelConfig.swift`: tunnel configuration, three tunnel modes, and validation errors.
+- `TunnelConfig.swift`: tunnel configuration, four tunnel modes, and validation errors.
 - `CoreStrings.swift`: Core-layer localization entry point for status summaries, runtime statuses, and validation errors.
 - `SSHCommandBuilder.swift`: fixed SSH argument generation without shell command string assembly.
 - `TunnelConfigStore.swift`: local JSON load/save for tunnel definitions.
@@ -92,14 +92,17 @@ Tunnel definitions are stored at:
 Each tunnel is represented by `TunnelConfig`. Core fields:
 
 - `id`: unique tunnel identifier.
-- `mode`: `localForward`, `dynamicForward`, or `sshConfig`.
+- `mode`: `localForward`, `remoteForward`, `dynamicForward`, or `sshConfig`.
 - `name`: display name in the UI.
 - `openURL`: optional local URL to open from the app.
 - `sshHost`, `localHost`, `localPort`, `remoteHost`, `remotePort`: used by Local Forward mode.
+- `sshHost`, `remoteHost`, `remotePort`, `localHost`, `localPort`: Remote Forward SSH Host, remote listener, and local target.
 - `sshHost`, `localHost`, `localPort`: used by Dynamic SOCKS mode.
 - `sshConfigName`: used by SSH Config mode.
 
 Legacy JSON without a `mode` field decodes as `localForward` so older configs remain readable.
+
+Before the first `remoteForward` write to an existing configuration, `TunnelConfigStore` copies the original bytes to `tunnels.json.pre-remote-forward.bak` with `0600` permissions. Later saves do not overwrite this backup.
 
 ## Tunnel Modes
 
@@ -116,6 +119,22 @@ Local Forward mode generates a complete `-L` argument from app fields:
 ```
 
 The app validates field formats and checks for occupied local ports before saving. It checks the local port again before starting, so it does not accidentally reuse a port already opened outside the app.
+
+### Remote Forward
+
+Remote Forward mode generates a complete `-R` argument:
+
+```bash
+/usr/bin/ssh -N \
+  -o ExitOnForwardFailure=yes \
+  -o ServerAliveInterval=30 \
+  -R remoteHost:remotePort:localHost:localPort \
+  sshHost
+```
+
+`remoteHost:remotePort` is the listener requested on the SSH server, while `localHost:localPort` is the target reached from the Mac side. The listener defaults to `localhost`. Non-loopback addresses and `*` require endpoint-bound confirmation before saving or starting, with an explicit warning that the server's `GatewayPorts` setting can widen the bind.
+
+The app does not run remote probes or use local `lsof` output to claim that the remote port is listening. Runtime state is process-only and forwarding failures are reported from SSH stderr.
 
 ### Dynamic SOCKS
 
@@ -184,7 +203,7 @@ The app only manages SSH processes that it starts. It does not search for or ter
 - `Port occupied`: no managed process, but the local port is already occupied by another process.
 - `Failed`: the managed process exited and left an error message.
 
-SSH Config mode does not parse specific local ports, so a running process displays as `Running`. If SSH exits because a `LocalForward` failed, stderr is shown on the tunnel card.
+Remote Forward and SSH Config modes do not use local port probes, so a running process displays as `Running`. If SSH exits because forwarding failed, stderr is shown on the tunnel card.
 
 ## Process Cleanup
 
@@ -199,8 +218,9 @@ The app does not accept arbitrary shell commands. All SSH arguments are passed a
 Validation rules:
 
 - `sshHost` and `sshConfigName` are required, cannot start with `-`, and cannot contain whitespace, control characters, or obvious shell metacharacters.
-- Local Forward endpoints and Dynamic SOCKS bind hosts reject bare IPv6. IPv6 must use bracketed form such as `[::1]`.
+- Local Forward, Remote Forward, and Dynamic SOCKS endpoints reject bare IPv6. IPv6 must use bracketed form such as `[::1]`.
 - Local bind host still allows exact `*` for intentional LAN access, but non-loopback binds require explicit confirmation before saving or starting; remote host does not allow wildcards.
+- A Remote Forward listener allows exact `*`, but non-loopback listeners require confirmation; its local target does not allow wildcards.
 - `127.0.0.1`, `localhost`, `::1`, and `[::1]` are treated as loopback addresses. Other local bind values are treated as potentially exposed without DNS resolution.
 - SSH Config mode checks the local bind addresses from resolved `LocalForward` entries and uses the same confirmation.
 - `openURL` accepts only `http` or `https` URLs with a host.

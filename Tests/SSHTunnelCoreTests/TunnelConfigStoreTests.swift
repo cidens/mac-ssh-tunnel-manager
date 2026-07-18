@@ -167,6 +167,72 @@ import Testing
     #expect(try store.load() == [tunnel])
 }
 
+@Test func storeRoundTripsRemoteForwardConfigurations() throws {
+    let directory = try temporaryDirectory()
+    let store = TunnelConfigStore(configURL: directory.appending(path: "tunnels.json"))
+    let tunnel = TunnelConfig(
+        name: "Example Reverse",
+        sshHost: "example-bastion",
+        remoteBindHost: "localhost",
+        remotePort: 18_080,
+        localTargetHost: "127.0.0.1",
+        localPort: 3_000,
+        openURL: nil
+    )
+
+    try store.save([tunnel])
+
+    let loaded = try store.load()
+    #expect(loaded == [tunnel])
+}
+
+@Test func firstRemoteForwardWriteCreatesOneTimeRecoverableLegacyBackup() throws {
+    let directory = try temporaryDirectory()
+    let configURL = directory.appending(path: "tunnels.json")
+    let store = TunnelConfigStore(configURL: configURL)
+    let legacyJSON = """
+    [
+      {
+        "id": "00000000-0000-0000-0000-000000000030",
+        "name": "Legacy 0.3.0",
+        "sshHost": "example-bastion",
+        "localHost": "127.0.0.1",
+        "localPort": 15432,
+        "remoteHost": "127.0.0.1",
+        "remotePort": 5432
+      }
+    ]
+    """
+    let legacyData = try #require(legacyJSON.data(using: .utf8))
+    try legacyData.write(to: configURL)
+    let legacyTunnel = try #require(try store.load().first)
+    let remoteTunnel = TunnelConfig(
+        name: "Example Reverse",
+        sshHost: "example-bastion",
+        remoteBindHost: "localhost",
+        remotePort: 18_080,
+        localTargetHost: "127.0.0.1",
+        localPort: 3_000,
+        openURL: nil
+    )
+
+    try store.save([legacyTunnel, remoteTunnel])
+
+    #expect(try Data(contentsOf: store.preRemoteForwardBackupURL) == legacyData)
+    #expect(try permissions(of: store.preRemoteForwardBackupURL) == 0o600)
+    #expect(try store.load().first == legacyTunnel)
+
+    let originalBackup = try Data(contentsOf: store.preRemoteForwardBackupURL)
+    try store.save([remoteTunnel])
+    #expect(try Data(contentsOf: store.preRemoteForwardBackupURL) == originalBackup)
+
+    let restored = try JSONDecoder().decode(
+        [TunnelConfig].self,
+        from: Data(contentsOf: store.preRemoteForwardBackupURL)
+    )
+    #expect(restored == [legacyTunnel])
+}
+
 private func temporaryDirectory() throws -> URL {
     let url = FileManager.default.temporaryDirectory
         .appending(path: "ssh-tunnel-manager-tests-\(UUID().uuidString)")

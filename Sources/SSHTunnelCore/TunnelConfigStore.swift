@@ -3,6 +3,10 @@ import Foundation
 public struct TunnelConfigStore: Sendable {
     public let configURL: URL
 
+    public var preRemoteForwardBackupURL: URL {
+        configURL.appendingPathExtension("pre-remote-forward.bak")
+    }
+
     public init(configURL: URL) {
         self.configURL = configURL
     }
@@ -23,6 +27,7 @@ public struct TunnelConfigStore: Sendable {
             [.posixPermissions: 0o700],
             ofItemAtPath: directory.path
         )
+        try createPreRemoteForwardBackupIfNeeded(for: tunnels)
         let encoder = JSONEncoder()
         encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
         let data = try encoder.encode(tunnels)
@@ -31,5 +36,30 @@ public struct TunnelConfigStore: Sendable {
             [.posixPermissions: 0o600],
             ofItemAtPath: configURL.path
         )
+    }
+
+    private func createPreRemoteForwardBackupIfNeeded(for tunnels: [TunnelConfig]) throws {
+        let fileManager = FileManager.default
+        guard tunnels.contains(where: { $0.mode == .remoteForward }),
+              fileManager.fileExists(atPath: configURL.path),
+              !fileManager.fileExists(atPath: preRemoteForwardBackupURL.path) else {
+            return
+        }
+
+        let existingData = try Data(contentsOf: configURL)
+        if let modes = try? JSONDecoder().decode([StoredMode].self, from: existingData),
+           modes.contains(where: { $0.mode == TunnelMode.remoteForward.rawValue }) {
+            return
+        }
+
+        try fileManager.copyItem(at: configURL, to: preRemoteForwardBackupURL)
+        try fileManager.setAttributes(
+            [.posixPermissions: 0o600],
+            ofItemAtPath: preRemoteForwardBackupURL.path
+        )
+    }
+
+    private struct StoredMode: Decodable {
+        let mode: String?
     }
 }

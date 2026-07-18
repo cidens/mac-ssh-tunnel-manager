@@ -14,6 +14,21 @@ import SSHTunnelCore
     #expect(!TunnelMode.localForward.showsSSHConfigFields)
 }
 
+@Test func remoteForwardFormShowsSSHRemoteListenerAndLocalTargetFields() {
+    #expect(TunnelMode.remoteForward.showsSSHHostAndLocalFields)
+    #expect(TunnelMode.remoteForward.showsRemoteFields)
+    #expect(!TunnelMode.remoteForward.showsSSHConfigFields)
+}
+
+@Test func selectingRemoteForwardDefaultsRemoteListenerToLocalhost() {
+    var draft = TunnelDraft()
+    draft.remoteHost = "example-target"
+
+    draft.mode = .remoteForward
+
+    #expect(draft.remoteHost == "localhost")
+}
+
 @Test func sshConfigFormShowsOnlyConfigAliasField() {
     #expect(!TunnelMode.sshConfig.showsSSHHostAndLocalFields)
     #expect(!TunnelMode.sshConfig.showsRemoteFields)

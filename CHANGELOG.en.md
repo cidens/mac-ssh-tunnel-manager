@@ -6,6 +6,9 @@ This project follows the basic Semantic Versioning convention: patch releases fo
 
 ## Unreleased
 
+- Adds OpenSSH remote port forwarding with `-R`, including remote listener and local target fields, risk confirmation for non-loopback remote binds, and a recoverable pre-migration configuration backup.
+- Fixes local port status refresh blocking the main thread and the menu panel failing to remain visible while the app is inactive.
+
 ## 0.3.2
 
 - Fixes distribution packages failing to load SwiftPM localization resources from the standard `Contents/Resources` directory, which caused the app to exit immediately away from the build machine, and validates the runtime resource layout during Release builds.

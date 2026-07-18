@@ -113,7 +113,7 @@ struct TunnelMenuView: View {
                 .ignoresSafeArea()
 
             VStack(alignment: .leading, spacing: 12) {
-                Text(AppStrings.riskyLocalBindTitle())
+                Text(warning.title)
                     .font(.headline)
                 Text(warning.message)
                     .font(.callout)
@@ -495,9 +495,10 @@ struct TunnelFormView: View {
             GridRow {
                 Text(AppStrings.formMode())
                 Picker(AppStrings.formMode(), selection: $draft.mode) {
-                    Text(AppStrings.modeLocalForward()).tag(TunnelMode.localForward)
-                    Text(AppStrings.modeDynamicForward()).tag(TunnelMode.dynamicForward)
-                    Text(AppStrings.modeSSHConfig()).tag(TunnelMode.sshConfig)
+                    Text(AppStrings.compactModeName(.localForward)).tag(TunnelMode.localForward)
+                    Text(AppStrings.compactModeName(.remoteForward)).tag(TunnelMode.remoteForward)
+                    Text(AppStrings.compactModeName(.dynamicForward)).tag(TunnelMode.dynamicForward)
+                    Text(AppStrings.compactModeName(.sshConfig)).tag(TunnelMode.sshConfig)
                 }
                 .pickerStyle(.segmented)
                 .labelsHidden()
@@ -513,7 +514,13 @@ struct TunnelFormView: View {
                     TextField(AppStrings.placeholderSSHHost(), text: $draft.sshHost)
                 }
                 GridRow {
-                    Text(draft.mode == .dynamicForward ? AppStrings.formSOCKS() : AppStrings.formLocal())
+                    Text(
+                        draft.mode == .dynamicForward
+                            ? AppStrings.formSOCKS()
+                            : draft.mode == .remoteForward
+                                ? AppStrings.formLocalTarget()
+                                : AppStrings.formLocal()
+                    )
                     HStack {
                         TextField("127.0.0.1", text: $draft.localHost)
                         TextField(AppStrings.placeholderPort(), text: $draft.localPort)
@@ -524,7 +531,7 @@ struct TunnelFormView: View {
 
             if draft.mode.showsRemoteFields {
                 GridRow {
-                    Text(AppStrings.formRemote())
+                    Text(draft.mode == .remoteForward ? AppStrings.formRemoteListener() : AppStrings.formRemote())
                     HStack {
                         TextField("127.0.0.1", text: $draft.remoteHost)
                         TextField(AppStrings.placeholderPort(), text: $draft.remotePort)

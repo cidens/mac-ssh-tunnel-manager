@@ -19,6 +19,8 @@ final class MenuPresentationCoordinator: NSObject {
     private let panel: MenuPanel
     private let hostingController: NSHostingController<MenuPanelRootView>
     private var managerCancellable: AnyCancellable?
+    private var localMouseMonitor: Any?
+    private var globalMouseMonitor: Any?
 
     init(manager: TunnelManager, shortcutController: GlobalShortcutController) {
         self.manager = manager
@@ -63,6 +65,7 @@ final class MenuPresentationCoordinator: NSObject {
 
     func close() {
         panel.orderOut(nil)
+        stopMonitoringOutsideClicks()
     }
 
     private func configureStatusItem() {
@@ -72,7 +75,7 @@ final class MenuPresentationCoordinator: NSObject {
         statusItem.length = NSStatusBar.system.thickness
         button.target = self
         button.action = #selector(toggleFromStatusItem)
-        button.sendAction(on: [.leftMouseUp])
+        button.sendAction(on: [.leftMouseDown])
     }
 
     private func configurePanel() {
@@ -82,7 +85,7 @@ final class MenuPresentationCoordinator: NSObject {
         panel.backgroundColor = .clear
         panel.hasShadow = true
         panel.level = .popUpMenu
-        panel.hidesOnDeactivate = true
+        panel.hidesOnDeactivate = false
         panel.animationBehavior = .utilityWindow
         panel.collectionBehavior = [.moveToActiveSpace, .fullScreenAuxiliary, .transient]
     }
@@ -127,9 +130,47 @@ final class MenuPresentationCoordinator: NSObject {
             positionPanel(on: screen, source: source)
         }
 
-        NSApp.activate(ignoringOtherApps: true)
-        panel.makeKeyAndOrderFront(nil)
         panel.orderFrontRegardless()
+        NSApp.activate(ignoringOtherApps: true)
+        panel.makeKey()
+        startMonitoringOutsideClicks()
+    }
+
+    private func startMonitoringOutsideClicks() {
+        guard localMouseMonitor == nil, globalMouseMonitor == nil else {
+            return
+        }
+
+        localMouseMonitor = NSEvent.addLocalMonitorForEvents(
+            matching: [.leftMouseDown, .rightMouseDown]
+        ) { [weak self] event in
+            guard let self else {
+                return event
+            }
+            if event.window !== self.panel,
+               event.window !== self.statusItem.button?.window {
+                self.close()
+            }
+            return event
+        }
+        globalMouseMonitor = NSEvent.addGlobalMonitorForEvents(
+            matching: [.leftMouseDown, .rightMouseDown]
+        ) { [weak self] _ in
+            Task { @MainActor in
+                self?.close()
+            }
+        }
+    }
+
+    private func stopMonitoringOutsideClicks() {
+        if let localMouseMonitor {
+            NSEvent.removeMonitor(localMouseMonitor)
+            self.localMouseMonitor = nil
+        }
+        if let globalMouseMonitor {
+            NSEvent.removeMonitor(globalMouseMonitor)
+            self.globalMouseMonitor = nil
+        }
     }
 
     private func targetScreen(for source: PresentationSource) -> NSScreen {
