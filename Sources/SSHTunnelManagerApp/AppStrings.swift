@@ -42,6 +42,8 @@ enum AppStrings {
         switch mode {
         case .localForward:
             return modeLocalForward(language: language)
+        case .remoteForward:
+            return modeRemoteForward(language: language)
         case .dynamicForward:
             return modeDynamicForward(language: language)
         case .sshConfig:
@@ -60,6 +62,16 @@ enum AppStrings {
                 tunnel.sshHost,
                 tunnel.remoteHost,
                 tunnel.remotePort
+            )
+        case .remoteForward:
+            return format(
+                "row.summary.remoteForward",
+                language: language,
+                tunnel.sshHost,
+                tunnel.remoteHost,
+                tunnel.remotePort,
+                tunnel.localHost,
+                tunnel.localPort
             )
         case .dynamicForward:
             return format("row.summary.dynamicForward", language: language, tunnel.localHost, tunnel.localPort, tunnel.sshHost)
@@ -278,6 +290,14 @@ enum AppStrings {
         string("security.riskyLocalBind.message", language: language)
     }
 
+    static func riskyRemoteBindTitle(language: String? = nil) -> String {
+        string("security.riskyRemoteBind.title", language: language)
+    }
+
+    static func riskyRemoteBindMessage(host: String, port: Int, language: String? = nil) -> String {
+        format("security.riskyRemoteBind.message", language: language, host, port)
+    }
+
     static func continueAnyway(language: String? = nil) -> String {
         string("security.continueAnyway", language: language)
     }
@@ -306,6 +326,14 @@ enum AppStrings {
         string("form.remote", language: language)
     }
 
+    static func formLocalTarget(language: String? = nil) -> String {
+        string("form.localTarget", language: language)
+    }
+
+    static func formRemoteListener(language: String? = nil) -> String {
+        string("form.remoteListener", language: language)
+    }
+
     static func formPort(language: String? = nil) -> String {
         string("form.port", language: language)
     }
@@ -318,12 +346,29 @@ enum AppStrings {
         string("mode.localForward", language: language)
     }
 
+    static func modeRemoteForward(language: String? = nil) -> String {
+        string("mode.remoteForward", language: language)
+    }
+
     static func modeDynamicForward(language: String? = nil) -> String {
         string("mode.dynamicForward", language: language)
     }
 
     static func modeSSHConfig(language: String? = nil) -> String {
         string("mode.sshConfig", language: language)
+    }
+
+    static func compactModeName(_ mode: TunnelMode, language: String? = nil) -> String {
+        switch mode {
+        case .localForward:
+            return string("mode.compact.localForward", language: language)
+        case .remoteForward:
+            return string("mode.compact.remoteForward", language: language)
+        case .dynamicForward:
+            return string("mode.compact.dynamicForward", language: language)
+        case .sshConfig:
+            return string("mode.compact.sshConfig", language: language)
+        }
     }
 
     static func placeholderName(language: String? = nil) -> String {

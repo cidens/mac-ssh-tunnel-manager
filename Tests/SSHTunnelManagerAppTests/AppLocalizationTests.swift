@@ -8,8 +8,16 @@ import Testing
     #expect(AppStrings.emptyStateTitle(language: "zh-Hans") == "还没有隧道配置")
     #expect(AppStrings.modeDynamicForward(language: "en") == "Dynamic SOCKS")
     #expect(AppStrings.modeDynamicForward(language: "zh-Hans") == "动态 SOCKS")
+    #expect(AppStrings.modeRemoteForward(language: "en") == "Remote Forward")
+    #expect(AppStrings.modeRemoteForward(language: "zh-Hans") == "远程转发")
+    #expect(AppStrings.compactModeName(.localForward, language: "en") == "Local")
+    #expect(AppStrings.compactModeName(.remoteForward, language: "en") == "Remote")
+    #expect(AppStrings.compactModeName(.dynamicForward, language: "en") == "SOCKS")
+    #expect(AppStrings.compactModeName(.sshConfig, language: "en") == "SSH Config")
     #expect(AppStrings.riskyLocalBindTitle(language: "en") == "Local listener may be exposed")
     #expect(AppStrings.riskyLocalBindTitle(language: "zh-Hans") == "本地监听可能暴露")
+    #expect(AppStrings.riskyRemoteBindTitle(language: "en") == "Remote listener may be exposed")
+    #expect(AppStrings.riskyRemoteBindTitle(language: "zh-Hans") == "远端监听可能暴露")
     #expect(AppStrings.shortcutSettingsTitle(language: "en") == "Global Shortcut")
     #expect(AppStrings.shortcutSettingsTitle(language: "zh-Hans") == "全局快捷键")
     #expect(AppStrings.deleteTunnelConfirmationTitle(language: "en") == "Delete tunnel configuration?")
@@ -18,6 +26,16 @@ import Testing
     #expect(AppStrings.searchTunnels(language: "zh-Hans") == "搜索隧道")
     #expect(AppStrings.sortManual(language: "en") == "Manual")
     #expect(AppStrings.sortManual(language: "zh-Hans") == "手工排序")
+}
+
+@Test func remoteBindWarningIncludesConfirmedEndpointAndGatewayPorts() {
+    let english = AppStrings.riskyRemoteBindMessage(host: "*", port: 18_080, language: "en")
+    let chinese = AppStrings.riskyRemoteBindMessage(host: "*", port: 18_080, language: "zh-Hans")
+
+    #expect(english.contains("*:18080"))
+    #expect(english.contains("GatewayPorts"))
+    #expect(chinese.contains("*:18080"))
+    #expect(chinese.contains("GatewayPorts"))
 }
 
 @Test func deleteTunnelConfirmationNamesTheTunnelAndExplainsTheConsequence() {

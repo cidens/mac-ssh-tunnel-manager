@@ -2,7 +2,7 @@
 
 English | [中文](README.md)
 
-A lightweight macOS menu bar app for managing SSH local port forwarding and dynamic SOCKS tunnels.
+A lightweight macOS menu bar app for managing SSH local port forwarding, remote port forwarding, and dynamic SOCKS tunnels.
 
 Current version: `0.3.2`
 
@@ -118,6 +118,12 @@ Each tunnel can include these fields:
 
 The app starts with an empty tunnel list. Add tunnels from the menu bar UI.
 
+Before the first Remote Forward configuration is saved, an existing `tunnels.json` is copied byte-for-byte to:
+
+```text
+~/Library/Application Support/ssh-tunnel-manager/tunnels.json.pre-remote-forward.bak
+```
+
 ## Usage
 
 Click "Add Tunnel" and choose one mode. The examples below use sanitized host names and documentation-only addresses. Replace them with real `Host` aliases from your own `~/.ssh/config`.
@@ -144,6 +150,31 @@ The app starts SSH with:
   -o ExitOnForwardFailure=yes \
   -o ServerAliveInterval=30 \
   -L localHost:localPort:remoteHost:remotePort \
+  sshHost
+```
+
+### Remote Forward
+
+Use this when an SSH server needs to reach a service running on the Mac or reachable from the Mac.
+
+```text
+Mode: Remote Forward
+Name: Example Reverse
+SSH Host: example-bastion
+Remote Listener: localhost 18080
+Local Target: 127.0.0.1 3000
+Open URL: blank
+```
+
+The remote listener defaults to `localhost`. A non-loopback address or `*` requires confirmation tied to the current endpoint and warns that the server's `GatewayPorts` setting can widen the effective bind. Runtime status is process-only because a local `lsof` check cannot prove that the remote listener exists.
+
+The app starts SSH with:
+
+```bash
+/usr/bin/ssh -N \
+  -o ExitOnForwardFailure=yes \
+  -o ServerAliveInterval=30 \
+  -R remoteHost:remotePort:localHost:localPort \
   sshHost
 ```
 

@@ -35,10 +35,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         return true
     }
 
-    func applicationDidBecomeActive(_ notification: Notification) {
-        menuCoordinator?.showAndFocus()
-    }
-
     func applicationWillTerminate(_ notification: Notification) {
         shortcutController?.prepareForTermination()
     }

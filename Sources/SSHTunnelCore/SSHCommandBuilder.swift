@@ -20,6 +20,15 @@ public struct SSHCommandBuilder: Sendable {
             try validateRemoteForwardHostLike(tunnel.remoteHost, field: "remoteHost")
             try validatePort(tunnel.localPort, field: "localPort")
             try validatePort(tunnel.remotePort, field: "remotePort")
+        case .remoteForward:
+            try validateNonEmpty(tunnel.sshHost, field: "sshHost")
+            try validateNonEmpty(tunnel.remoteHost, field: "remoteHost")
+            try validateNonEmpty(tunnel.localHost, field: "localHost")
+            try validateHostLike(tunnel.sshHost, field: "sshHost")
+            try validateLocalForwardHostLike(tunnel.remoteHost, field: "remoteHost")
+            try validateRemoteForwardHostLike(tunnel.localHost, field: "localHost")
+            try validatePort(tunnel.remotePort, field: "remotePort")
+            try validatePort(tunnel.localPort, field: "localPort")
         case .dynamicForward:
             try validateNonEmpty(tunnel.sshHost, field: "sshHost")
             try validateNonEmpty(tunnel.localHost, field: "localHost")
@@ -44,6 +53,14 @@ public struct SSHCommandBuilder: Sendable {
                 "-o", "ExitOnForwardFailure=yes",
                 "-o", "ServerAliveInterval=30",
                 "-L", "\(tunnel.localHost):\(tunnel.localPort):\(tunnel.remoteHost):\(tunnel.remotePort)",
+                tunnel.sshHost
+            ]
+        case .remoteForward:
+            arguments = [
+                "-N",
+                "-o", "ExitOnForwardFailure=yes",
+                "-o", "ServerAliveInterval=30",
+                "-R", "\(tunnel.remoteHost):\(tunnel.remotePort):\(tunnel.localHost):\(tunnel.localPort)",
                 tunnel.sshHost
             ]
         case .dynamicForward:

@@ -2,11 +2,11 @@ import SSHTunnelCore
 
 extension TunnelMode {
     var showsSSHHostAndLocalFields: Bool {
-        self == .localForward || self == .dynamicForward
+        self == .localForward || self == .remoteForward || self == .dynamicForward
     }
 
     var showsRemoteFields: Bool {
-        self == .localForward
+        self == .localForward || self == .remoteForward
     }
 
     var showsSSHConfigFields: Bool {

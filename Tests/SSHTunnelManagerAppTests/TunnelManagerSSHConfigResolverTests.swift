@@ -150,6 +150,87 @@ import SSHTunnelCore
 }
 
 @MainActor
+@Test func addRemoteForwardRequiresEndpointBoundConfirmationForNonLoopbackRemoteBind() throws {
+    let directory = try temporaryDirectory()
+    let manager = TunnelManager(
+        store: TunnelConfigStore(configURL: directory.appending(path: "tunnels.json")),
+        sshConfigResolver: StubSSHConfigResolver(results: [
+            "example-bastion": .resolved("user appuser\nhostname 203.0.113.10\n")
+        ])
+    )
+    defer { manager.prepareForApplicationTermination() }
+    let draft = remoteForwardDraft(remoteBindHost: "*", remotePort: "18080")
+
+    #expect(!manager.addTunnel(draft))
+    #expect(manager.tunnels.isEmpty)
+    #expect(manager.riskWarning?.title == AppStrings.riskyRemoteBindTitle())
+    #expect(manager.riskWarning?.message.contains("*:18080") == true)
+    #expect(manager.riskWarning?.message.contains("GatewayPorts") == true)
+
+    manager.confirmRiskyOperation()
+
+    #expect(manager.tunnels.count == 1)
+    #expect(manager.riskWarning == nil)
+}
+
+@MainActor
+@Test func startingRemoteForwardCannotBypassNonLoopbackRemoteBindConfirmation() throws {
+    let directory = try temporaryDirectory()
+    let manager = TunnelManager(
+        store: TunnelConfigStore(configURL: directory.appending(path: "tunnels.json")),
+        sshConfigResolver: StubSSHConfigResolver(results: [
+            "example-bastion": .resolved("user appuser\nhostname 203.0.113.10\n")
+        ])
+    )
+    defer { manager.prepareForApplicationTermination() }
+    let tunnel = TunnelConfig(
+        name: "Example Reverse",
+        sshHost: "example-bastion",
+        remoteBindHost: "0.0.0.0",
+        remotePort: 18_080,
+        localTargetHost: "127.0.0.1",
+        localPort: 3_000,
+        openURL: nil
+    )
+
+    manager.start(tunnel)
+
+    #expect(manager.riskWarning?.message.contains("0.0.0.0:18080") == true)
+    #expect(!manager.isManagedProcessRunning(for: tunnel))
+}
+
+@MainActor
+@Test func remoteForwardRejectsSSHHostWithExistingForwardingDirectives() throws {
+    let directory = try temporaryDirectory()
+    let manager = TunnelManager(
+        store: TunnelConfigStore(configURL: directory.appending(path: "tunnels.json")),
+        sshConfigResolver: StubSSHConfigResolver(results: [
+            "example-bastion": .resolved("dynamicforward 127.0.0.1:1080\n")
+        ])
+    )
+    defer { manager.prepareForApplicationTermination() }
+
+    #expect(!manager.addTunnel(remoteForwardDraft()))
+    #expect(manager.tunnels.isEmpty)
+    #expect(manager.addError.contains("DynamicForward"))
+}
+
+@MainActor
+@Test func remoteForwardUsesProcessOnlyStatusWithoutCheckingLocalTargetPort() {
+    let tunnel = TunnelConfig(
+        name: "Example Reverse",
+        sshHost: "example-bastion",
+        remoteBindHost: "localhost",
+        remotePort: 18_080,
+        localTargetHost: "127.0.0.1",
+        localPort: 3_000,
+        openURL: nil
+    )
+
+    #expect(!TunnelManager.shouldCheckLocalPort(for: tunnel))
+}
+
+@MainActor
 @Test func favoriteChangeRollsBackWhenSavingFails() throws {
     let directory = try temporaryDirectory()
     let configURL = directory.appending(path: "tunnels.json")
@@ -256,6 +337,21 @@ private final class StubSSHConfigResolver: SSHConfigResolving {
         requestedNames.append(name)
         return results[name] ?? .failed
     }
+}
+
+private func remoteForwardDraft(
+    remoteBindHost: String = "localhost",
+    remotePort: String = "18080"
+) -> TunnelDraft {
+    var draft = TunnelDraft()
+    draft.mode = .remoteForward
+    draft.name = "Example Reverse"
+    draft.sshHost = "example-bastion"
+    draft.remoteHost = remoteBindHost
+    draft.remotePort = remotePort
+    draft.localHost = "127.0.0.1"
+    draft.localPort = "3000"
+    return draft
 }
 
 private func temporaryDirectory() throws -> URL {
