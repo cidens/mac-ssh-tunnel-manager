@@ -20,3 +20,5 @@
 "error.sshConfigMissingLocalForward" = "%@ must be an SSH config Host with at least one LocalForward";
 "error.sshConfigValidationTimedOut" = "Checking SSH Config Host %@ timed out (%d seconds). Common causes include Match exec, ProxyJump, or slow DNS; retry or check your SSH config.";
 "error.sshHostContainsForwardingDirectives" = "SSH Host %@ already defines forwarding directives. Use SSH Config mode or choose a Host without LocalForward, RemoteForward, or DynamicForward.";
+"error.tooManyTags" = "Add no more than %d tags.";
+"error.tagTooLong" = "Each tag must be %d characters or fewer.";

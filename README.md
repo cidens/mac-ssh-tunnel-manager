@@ -15,6 +15,7 @@
 - 启动隧道时直接调用 `/usr/bin/ssh`，不经过 shell 字符串拼接。
 - 复用系统已有的 `~/.ssh/config`、ssh-agent 和 macOS Keychain 行为。
 - 隧道配置以 JSON 保存在本机。
+- 支持通过标签、收藏、搜索和排序快速定位隧道配置。
 - 不保存服务器密码或私钥。
 - 不内置任何默认隧道配置。
 - 界面支持英文和简体中文，默认跟随 macOS 系统语言。
@@ -93,6 +94,7 @@ swift test
 - [全局快捷键备用入口需求](docs/requirements-global-shortcut.md)
 - [全局快捷键备用入口技术设计](docs/design-global-shortcut.md)
 - [全局快捷键备用入口验收记录](docs/validation-global-shortcut.md)
+- [配置组织功能验收记录](docs/validation-config-organization.md)
 - [分发说明](docs/distribution.md)
 - [隐私说明](docs/privacy.md)
 - [排障手册](docs/troubleshooting.md)
@@ -128,6 +130,23 @@ swift test
 - `remotePort`
 - `sshConfigName`
 - `openURL`
+- `tags`：最多 10 个标签，每个标签最多 32 个字符，按大小写不敏感方式去重。
+- `isFavorite`：收藏状态。
+- `manualOrder`：稳定的手工排序序号。
+- `lastUsedAt`：最近一次成功启动 SSH 进程的时间。
+
+旧版 JSON 不包含上述组织字段时，标签和收藏使用默认值，并以原 JSON 数组顺序作为初始手工顺序。
+
+## 配置查找与排序
+
+主界面支持：
+
+- 搜索名称、标签、模式、SSH Host 或 SSH Config 别名和当前模式实际使用的端口文本。
+- 组合使用标签筛选、仅收藏筛选和搜索条件，并显示结果数量。
+- 按手工顺序、名称、运行状态或最近使用时间排序。
+- 在未启用搜索、标签或收藏筛选时，通过上下箭头调整手工顺序。
+
+筛选和排序只改变展示结果，不会启动、停止、编辑或删除被隐藏的隧道。手工顺序、标签、收藏和最近使用时间都会随配置保存；写盘失败时界面恢复为修改前状态并显示错误。
 
 首次启动时列表为空，需要在菜单栏界面中手动添加隧道。
 

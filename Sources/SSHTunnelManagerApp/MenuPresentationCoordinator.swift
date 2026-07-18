@@ -178,6 +178,11 @@ final class MenuPresentationCoordinator: NSObject {
 final class MenuPanel: NSPanel {
     override var canBecomeKey: Bool { true }
     override var canBecomeMain: Bool { false }
+
+    override func orderOut(_ sender: Any?) {
+        makeFirstResponder(nil)
+        super.orderOut(sender)
+    }
 }
 
 struct MenuPanelRootView: View {

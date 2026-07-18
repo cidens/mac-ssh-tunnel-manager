@@ -14,6 +14,10 @@ import Testing
     #expect(AppStrings.shortcutSettingsTitle(language: "zh-Hans") == "全局快捷键")
     #expect(AppStrings.deleteTunnelConfirmationTitle(language: "en") == "Delete tunnel configuration?")
     #expect(AppStrings.deleteTunnelConfirmationTitle(language: "zh-Hans") == "删除隧道配置？")
+    #expect(AppStrings.searchTunnels(language: "en") == "Search tunnels")
+    #expect(AppStrings.searchTunnels(language: "zh-Hans") == "搜索隧道")
+    #expect(AppStrings.sortManual(language: "en") == "Manual")
+    #expect(AppStrings.sortManual(language: "zh-Hans") == "手工排序")
 }
 
 @Test func deleteTunnelConfirmationNamesTheTunnelAndExplainsTheConsequence() {
@@ -63,4 +67,6 @@ import Testing
     #expect(englishKeys.contains("button.addTunnel"))
     #expect(englishKeys.contains("shortcut.settings.title"))
     #expect(englishKeys.contains("delete.confirmation.message"))
+    #expect(englishKeys.contains("filter.search"))
+    #expect(englishKeys.contains("sort.manual"))
 }

@@ -128,6 +128,43 @@ import Testing
     #expect(tunnels.first?.mode == .localForward)
     #expect(tunnels.first?.sshHost == "work-host")
     #expect(tunnels.first?.localPort == 15432)
+    #expect(tunnels.first?.tags == [])
+    #expect(tunnels.first?.isFavorite == false)
+    #expect(tunnels.first?.manualOrder == nil)
+}
+
+@Test func normalizesTagsByTrimmingAndCaseInsensitiveDeduplication() throws {
+    let tags = try TunnelConfig.normalizedTags([
+        "  Production ", "production", "Database", "  ", "PRODUCTION", "", "Database",
+        "production", " ", "DATABASE", "Production", "café", "CAFE"
+    ])
+
+    #expect(tags == ["Production", "Database", "café", "CAFE"])
+}
+
+@Test func rejectsTagsBeyondConfiguredLimits() {
+    #expect(throws: TunnelTagValidationError.tooManyTags(maximum: TunnelConfig.maximumTagCount)) {
+        try TunnelConfig.normalizedTags((0...TunnelConfig.maximumTagCount).map { "tag-\($0)" })
+    }
+    #expect(throws: TunnelTagValidationError.tagTooLong(maximum: TunnelConfig.maximumTagLength)) {
+        try TunnelConfig.normalizedTags([String(repeating: "x", count: TunnelConfig.maximumTagLength + 1)])
+    }
+}
+
+@Test func roundTripsOrganizationMetadata() throws {
+    let directory = try temporaryDirectory()
+    let store = TunnelConfigStore(configURL: directory.appending(path: "tunnels.json"))
+    var tunnel = TunnelConfig(
+        name: "Example DB", sshHost: "work-host", localHost: "127.0.0.1", localPort: 15432,
+        remoteHost: "127.0.0.1", remotePort: 5432, openURL: nil
+    )
+    tunnel.tags = ["Database"]
+    tunnel.isFavorite = true
+    tunnel.manualOrder = 3
+    tunnel.lastUsedAt = Date(timeIntervalSinceReferenceDate: 1_000)
+
+    try store.save([tunnel])
+    #expect(try store.load() == [tunnel])
 }
 
 private func temporaryDirectory() throws -> URL {

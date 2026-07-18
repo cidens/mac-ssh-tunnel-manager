@@ -7,6 +7,9 @@ public enum TunnelMode: String, Codable, Equatable, Sendable {
 }
 
 public struct TunnelConfig: Codable, Equatable, Identifiable, Sendable {
+    public static let maximumTagCount = 10
+    public static let maximumTagLength = 32
+
     public var id: UUID
     public var mode: TunnelMode
     public var name: String
@@ -17,6 +20,10 @@ public struct TunnelConfig: Codable, Equatable, Identifiable, Sendable {
     public var remotePort: Int
     public var sshConfigName: String?
     public var openURL: URL?
+    public var tags: [String]
+    public var isFavorite: Bool
+    public var manualOrder: Int?
+    public var lastUsedAt: Date?
 
     public init(
         id: UUID = UUID(),
@@ -38,6 +45,10 @@ public struct TunnelConfig: Codable, Equatable, Identifiable, Sendable {
         self.remotePort = remotePort
         self.sshConfigName = nil
         self.openURL = openURL
+        self.tags = []
+        self.isFavorite = false
+        self.manualOrder = nil
+        self.lastUsedAt = nil
     }
 
     public init(
@@ -58,6 +69,10 @@ public struct TunnelConfig: Codable, Equatable, Identifiable, Sendable {
         self.remotePort = 0
         self.sshConfigName = nil
         self.openURL = openURL
+        self.tags = []
+        self.isFavorite = false
+        self.manualOrder = nil
+        self.lastUsedAt = nil
     }
 
     public init(
@@ -76,6 +91,10 @@ public struct TunnelConfig: Codable, Equatable, Identifiable, Sendable {
         self.remotePort = 0
         self.sshConfigName = sshConfigName
         self.openURL = openURL
+        self.tags = []
+        self.isFavorite = false
+        self.manualOrder = nil
+        self.lastUsedAt = nil
     }
 
     private enum CodingKeys: String, CodingKey {
@@ -89,6 +108,10 @@ public struct TunnelConfig: Codable, Equatable, Identifiable, Sendable {
         case remotePort
         case sshConfigName
         case openURL
+        case tags
+        case isFavorite
+        case manualOrder
+        case lastUsedAt
     }
 
     public init(from decoder: Decoder) throws {
@@ -97,6 +120,10 @@ public struct TunnelConfig: Codable, Equatable, Identifiable, Sendable {
         mode = try container.decodeIfPresent(TunnelMode.self, forKey: .mode) ?? .localForward
         name = try container.decode(String.self, forKey: .name)
         openURL = try container.decodeIfPresent(URL.self, forKey: .openURL)
+        tags = try Self.normalizedTags(try container.decodeIfPresent([String].self, forKey: .tags) ?? [])
+        isFavorite = try container.decodeIfPresent(Bool.self, forKey: .isFavorite) ?? false
+        manualOrder = try container.decodeIfPresent(Int.self, forKey: .manualOrder)
+        lastUsedAt = try container.decodeIfPresent(Date.self, forKey: .lastUsedAt)
 
         switch mode {
         case .localForward:
@@ -129,6 +156,10 @@ public struct TunnelConfig: Codable, Equatable, Identifiable, Sendable {
         try container.encode(mode, forKey: .mode)
         try container.encode(name, forKey: .name)
         try container.encodeIfPresent(openURL, forKey: .openURL)
+        try container.encode(tags, forKey: .tags)
+        try container.encode(isFavorite, forKey: .isFavorite)
+        try container.encodeIfPresent(manualOrder, forKey: .manualOrder)
+        try container.encodeIfPresent(lastUsedAt, forKey: .lastUsedAt)
 
         switch mode {
         case .localForward:
@@ -143,6 +174,38 @@ public struct TunnelConfig: Codable, Equatable, Identifiable, Sendable {
             try container.encode(localPort, forKey: .localPort)
         case .sshConfig:
             try container.encode(sshConfigName, forKey: .sshConfigName)
+        }
+    }
+
+    public static func normalizedTags(_ values: [String]) throws -> [String] {
+        var seen = Set<String>()
+        var result: [String] = []
+        for value in values {
+            let tag = value.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !tag.isEmpty else { continue }
+            guard tag.count <= maximumTagLength else {
+                throw TunnelTagValidationError.tagTooLong(maximum: maximumTagLength)
+            }
+            guard seen.insert(tag.folding(options: .caseInsensitive, locale: nil)).inserted else {
+                continue
+            }
+            guard result.count < maximumTagCount else {
+                throw TunnelTagValidationError.tooManyTags(maximum: maximumTagCount)
+            }
+            result.append(tag)
+        }
+        return result
+    }
+}
+
+public enum TunnelTagValidationError: Error, Equatable, LocalizedError {
+    case tooManyTags(maximum: Int)
+    case tagTooLong(maximum: Int)
+
+    public var errorDescription: String? {
+        switch self {
+        case .tooManyTags(let maximum): return CoreStrings.format("error.tooManyTags", maximum)
+        case .tagTooLong(let maximum): return CoreStrings.format("error.tagTooLong", maximum)
         }
     }
 }
