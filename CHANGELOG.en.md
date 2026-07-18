@@ -6,8 +6,15 @@ This project follows the basic Semantic Versioning convention: patch releases fo
 
 ## Unreleased
 
+- Adds opt-in per-tunnel automatic reconnection with 2, 5, 10, 30, and 60 second backoff intervals and a reset after five minutes of stable operation.
+- Adds Connecting, Waiting for Network, and Waiting to Retry states; retries pause while offline or asleep and resume once after the network remains stable for two seconds.
+- Isolates stale process callbacks by run generation; manual Stop cancels retries, while authentication, host-key, port-conflict, and configuration failures do not retry automatically.
 - Adds OpenSSH remote port forwarding with `-R`, including remote listener and local target fields, risk confirmation for non-loopback remote binds, and a recoverable pre-migration configuration backup.
 - Fixes local port status refresh blocking the main thread and the menu panel failing to remain visible while the app is inactive.
+- Adds tunnel tags, favorites, search, combined filters, result counts, and a clear-filter action.
+- Adds manual, name, runtime-status, and last-used sorting; persists manual order and last-used time with rollback on save failure while preserving legacy JSON order.
+- Trims tags, deduplicates them case-insensitively, and limits each tunnel to 10 tags of at most 32 characters.
+- Adds horizontal scrolling for long tag lists, mode-aware search fields, and configuration-compatibility and sort-persistence tests.
 
 ## 0.3.2
 

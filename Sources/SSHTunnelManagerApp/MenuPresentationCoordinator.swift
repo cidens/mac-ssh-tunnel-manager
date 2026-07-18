@@ -147,7 +147,8 @@ final class MenuPresentationCoordinator: NSObject {
             guard let self else {
                 return event
             }
-            if event.window !== self.panel,
+            if self.panel.attachedSheet == nil,
+               !Self.isWindow(event.window, ownedBy: self.panel),
                event.window !== self.statusItem.button?.window {
                 self.close()
             }
@@ -160,6 +161,15 @@ final class MenuPresentationCoordinator: NSObject {
                 self?.close()
             }
         }
+    }
+
+    static func isWindow(_ candidate: NSWindow?, ownedBy panel: NSPanel) -> Bool {
+        var current = candidate
+        while let window = current {
+            if window === panel { return true }
+            current = window.sheetParent ?? window.parent
+        }
+        return false
     }
 
     private func stopMonitoringOutsideClicks() {

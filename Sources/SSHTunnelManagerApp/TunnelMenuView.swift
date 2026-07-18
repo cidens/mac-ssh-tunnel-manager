@@ -356,7 +356,7 @@ struct TunnelRowView: View {
                 }
                 .buttonStyle(.borderless)
                 .help(AppStrings.favorite())
-                if manager.isManagedProcessRunning(for: tunnel) {
+                if manager.isRunRequested(for: tunnel) {
                     Button(AppStrings.stop()) {
                         manager.stop(tunnel)
                     }
@@ -372,7 +372,7 @@ struct TunnelRowView: View {
                     }
                 }
 
-                if !manager.isManagedProcessRunning(for: tunnel) {
+                if !manager.isRunRequested(for: tunnel) {
                     Button {
                         editDraft = TunnelDraft(tunnel: tunnel)
                         editError = ""
@@ -468,7 +468,7 @@ struct TunnelRowView: View {
         switch status {
         case .stopped:
             return .secondary
-        case .running:
+        case .connecting, .waitingForNetwork, .waitingToReconnect, .running:
             return .orange
         case .portListening:
             return .green
@@ -554,6 +554,13 @@ struct TunnelFormView: View {
             GridRow {
                 Text(AppStrings.formTags())
                 TextField(AppStrings.placeholderTags(), text: $draft.tags)
+            }
+            GridRow {
+                Text(AppStrings.formAutoReconnect())
+                Toggle("", isOn: $draft.isAutoReconnectEnabled)
+                    .toggleStyle(.switch)
+                    .labelsHidden()
+                    .help(AppStrings.autoReconnectHelp())
             }
         }
         .textFieldStyle(.roundedBorder)

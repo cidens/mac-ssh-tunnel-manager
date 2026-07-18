@@ -74,6 +74,8 @@
 "placeholder.sshConfig" = "example-service";
 "placeholder.openURL" = "Optional, for example http://127.0.0.1:8088";
 "form.tags" = "Tags";
+"form.autoReconnect" = "Auto reconnect";
+"form.autoReconnect.help" = "Retry recoverable failures after network or sleep recovery";
 "placeholder.tags" = "Comma-separated, up to 10";
 "filter.search" = "Search tunnels";
 "filter.favorites" = "Favorites only";
@@ -97,3 +99,4 @@
 "error.failedToSaveTunnels" = "Failed to save tunnels: %@";
 "error.localPortAlreadyListeningOutsideApp" = "Local port %@:%d is already listening outside this app.";
 "error.stopBeforeEditing" = "Stop this tunnel before editing it.";
+"error.sshProcessExited" = "SSH process exited with status %d.";

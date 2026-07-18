@@ -15,6 +15,8 @@ The app name is `SSH Tunnel Manager`; the SwiftPM executable target remains `ssh
 - Starts tunnels by calling `/usr/bin/ssh` directly, without shell command string assembly.
 - Reuses your existing `~/.ssh/config`, ssh-agent, and macOS Keychain behavior.
 - Stores tunnel definitions as local JSON.
+- Supports tags, favorites, search, and sorting for organizing tunnel configurations.
+- Supports per-tunnel automatic reconnection with network and sleep recovery.
 - Does not store server passwords or private keys.
 - Ships with no built-in tunnel presets.
 - Supports English and Simplified Chinese UI, following the macOS system language.
@@ -90,6 +92,7 @@ swift test
 - [Privacy notes](docs/privacy.en.md)
 - [Troubleshooting](docs/troubleshooting.en.md)
 - [Release process](docs/release.en.md)
+- [Automatic reconnection validation](docs/validation-auto-reconnect.md)
 - [Changelog](CHANGELOG.en.md)
 - [Contributing](CONTRIBUTING.en.md)
 - [Code of Conduct](CODE_OF_CONDUCT.md)
@@ -115,6 +118,13 @@ Each tunnel can include these fields:
 - `remotePort`
 - `sshConfigName`
 - `openURL`
+- `tags`: up to 10 tags, with a maximum of 32 characters each and case-insensitive deduplication.
+- `isFavorite`: whether the tunnel is marked as a favorite.
+- `manualOrder`: stable manual sort position.
+- `lastUsedAt`: time when the SSH process was most recently started successfully.
+- `isAutoReconnectEnabled`: whether recoverable failures should trigger automatic reconnection; defaults to `false` for legacy JSON.
+
+Legacy JSON without organization or automatic-reconnection fields uses compatible defaults. When every configuration lacks `manualOrder`, the original JSON array order becomes the initial manual order.
 
 The app starts with an empty tunnel list. Add tunnels from the menu bar UI.
 
@@ -123,6 +133,16 @@ Before the first Remote Forward configuration is saved, an existing `tunnels.jso
 ```text
 ~/Library/Application Support/ssh-tunnel-manager/tunnels.json.pre-remote-forward.bak
 ```
+
+## Configuration Organization
+
+The main panel supports combined name, tag, mode, SSH Host or SSH Config alias, and active-port search; tag and favorites filters; result counts; and manual, name, runtime-status, or last-used sorting. Filters and sorting only change presentation and never start, stop, edit, or delete hidden tunnels. Manual order, tags, favorites, and last-used time are persisted with each configuration and rolled back in memory if saving fails.
+
+## Automatic Reconnection
+
+Automatic reconnection is configured independently for each tunnel and is disabled by default. Recoverable SSH failures retry after 2, 5, 10, 30, and 60 seconds, remaining capped at 60 seconds; five minutes of stable operation resets the sequence.
+
+Retries pause while the network is offline or the Mac is asleep. After network recovery or wake, the app waits two seconds for stability and resumes only once. Clicking Stop while connecting, waiting for the network, or waiting to retry cancels the run intent and all pending work. Authentication failures, host-key failures, listener conflicts, and configuration errors do not retry automatically. A transient `ssh -G` timeout during automatic recovery proceeds to the next backoff interval, while the same timeout during a manual start is reported immediately.
 
 ## Usage
 

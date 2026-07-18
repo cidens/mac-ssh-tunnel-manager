@@ -4,6 +4,12 @@ import Testing
 @Test func runtimeStatusDisplayTextLocalizesToEnglishAndChinese() {
     #expect(TunnelRuntimeStatus.running.displayText(language: "en") == "Running")
     #expect(TunnelRuntimeStatus.running.displayText(language: "zh-Hans") == "运行中")
+    #expect(TunnelRuntimeStatus.connecting.displayText(language: "en") == "Connecting")
+    #expect(TunnelRuntimeStatus.connecting.displayText(language: "zh-Hans") == "正在连接")
+    #expect(TunnelRuntimeStatus.waitingForNetwork.displayText(language: "en") == "Waiting for network")
+    #expect(TunnelRuntimeStatus.waitingForNetwork.displayText(language: "zh-Hans") == "等待网络")
+    #expect(TunnelRuntimeStatus.waitingToReconnect.displayText(language: "en") == "Waiting to reconnect")
+    #expect(TunnelRuntimeStatus.waitingToReconnect.displayText(language: "zh-Hans") == "等待重连")
     #expect(TunnelRuntimeStatus.externalListening.displayText(language: "en") == "Port occupied")
     #expect(TunnelRuntimeStatus.externalListening.displayText(language: "zh-Hans") == "端口占用")
 }

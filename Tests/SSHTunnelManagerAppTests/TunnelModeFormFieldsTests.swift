@@ -2,6 +2,19 @@ import Testing
 import SSHTunnelCore
 @testable import SSHTunnelManagerApp
 
+@Test func tunnelDraftRoundTripsAutoReconnectSetting() throws {
+    var tunnel = TunnelConfig(
+        name: "Example",
+        sshConfigName: "example-service",
+        openURL: nil
+    )
+    tunnel.isAutoReconnectEnabled = true
+
+    let rebuilt = try TunnelDraft(tunnel: tunnel).makeConfig(id: tunnel.id)
+
+    #expect(rebuilt.isAutoReconnectEnabled)
+}
+
 @Test func dynamicForwardFormShowsOnlySSHHostAndLocalFields() {
     #expect(TunnelMode.dynamicForward.showsSSHHostAndLocalFields)
     #expect(!TunnelMode.dynamicForward.showsRemoteFields)
