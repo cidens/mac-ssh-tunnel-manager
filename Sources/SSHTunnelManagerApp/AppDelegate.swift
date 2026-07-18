@@ -5,10 +5,15 @@ import SSHTunnelCore
 final class AppDelegate: NSObject, NSApplicationDelegate {
     private var manager: TunnelManager?
     private var shortcutController: GlobalShortcutController?
+    private var notificationController: ConnectionNotificationController?
     private var menuCoordinator: MenuPresentationCoordinator?
 
     func applicationDidFinishLaunching(_ notification: Notification) {
-        let manager = TunnelManager()
+        let notificationController = ConnectionNotificationController(
+            store: ConnectionNotificationSettingsStore(settingsURL: Self.notificationSettingsURL()),
+            delivery: SystemConnectionNotificationCenter()
+        )
+        let manager = TunnelManager(notificationSender: notificationController)
         let registrar = CarbonGlobalShortcutRegistrar()
         let conflictChecker = CarbonSystemShortcutConflictChecker()
         let shortcutController = GlobalShortcutController(
@@ -18,7 +23,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         )
         let menuCoordinator = MenuPresentationCoordinator(
             manager: manager,
-            shortcutController: shortcutController
+            shortcutController: shortcutController,
+            notificationController: notificationController
         )
         shortcutController.setTriggerAction { [weak menuCoordinator] in
             menuCoordinator?.toggleFromGlobalShortcut()
@@ -26,8 +32,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
         self.manager = manager
         self.shortcutController = shortcutController
+        self.notificationController = notificationController
         self.menuCoordinator = menuCoordinator
         shortcutController.start()
+        notificationController.start()
     }
 
     func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {
@@ -45,5 +53,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         return base
             .appending(path: "ssh-tunnel-manager", directoryHint: .isDirectory)
             .appending(path: "settings.json")
+    }
+
+    private static func notificationSettingsURL() -> URL {
+        defaultSettingsURL()
+            .deletingLastPathComponent()
+            .appending(path: "connection-notifications.json")
     }
 }

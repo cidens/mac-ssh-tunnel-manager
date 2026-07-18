@@ -22,7 +22,8 @@ let package = Package(
             dependencies: ["SSHTunnelCore"],
             resources: [.process("Resources")],
             linkerSettings: [
-                .linkedFramework("Carbon")
+                .linkedFramework("Carbon"),
+                .linkedFramework("UserNotifications")
             ]
         ),
         .testTarget(

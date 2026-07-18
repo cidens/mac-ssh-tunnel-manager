@@ -6,6 +6,8 @@ This project follows the basic Semantic Versioning convention: patch releases fo
 
 ## Unreleased
 
+- Adds opt-in connection failure and recovery notifications, requests permission only when enabled, limits each continuous failure cycle to one failure and one recovery notification, and suppresses disconnection notifications for user actions.
+- Adds Connection Details and Copy Diagnostics with status time, exit code, retry data, error category, and a sanitized summary; copied output excludes configuration names, hosts or IPs, usernames, target ports, private-key paths, complete commands, and raw stderr.
 - Adds opt-in per-tunnel automatic reconnection with 2, 5, 10, 30, and 60 second backoff intervals and a reset after five minutes of stable operation.
 - Adds Connecting, Waiting for Network, and Waiting to Retry states; retries pause while offline or asleep and resume once after the network remains stable for two seconds.
 - Isolates stale process callbacks by run generation; manual Stop cancels retries, while authentication, host-key, port-conflict, and configuration failures do not retry automatically.
