@@ -1,6 +1,9 @@
 "status.stopped" = "Stopped";
+"status.connecting" = "Connecting";
 "status.running" = "Running";
 "status.portListening" = "Listening";
+"status.waitingForNetwork" = "Waiting for network";
+"status.waitingToReconnect" = "Waiting to reconnect";
 "status.externalListening" = "Port occupied";
 "status.failed" = "Failed";
 "summary.display" = "Running %d · Issues %d · Total %d";

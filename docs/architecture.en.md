@@ -24,15 +24,18 @@ Tests are split into two test targets:
 
 Key file responsibilities:
 
-- `TunnelConfig.swift`: tunnel configuration, four tunnel modes, and validation errors.
+- `TunnelConfig.swift`: tunnel configuration, four tunnel modes, organization metadata, automatic-reconnection settings, and validation errors.
 - `CoreStrings.swift`: Core-layer localization entry point for status summaries, runtime statuses, and validation errors.
 - `SSHCommandBuilder.swift`: fixed SSH argument generation without shell command string assembly.
 - `TunnelConfigStore.swift`: local JSON load/save for tunnel definitions.
+- `TunnelRecoveryPolicy.swift`: connection lifecycle, stop reasons, run generations, retry backoff, and SSH failure classification.
+- `TunnelDiagnosticSanitizer.swift`: redacts SSH hosts, non-loopback targets, and the user home directory before diagnostics are stored or displayed.
 - `PortStatusParser.swift`: parses `lsof` output to detect local listening ports.
 - `SSHConfigOutputParser.swift`: parses `ssh -G` output to confirm SSH Config mode has a `LocalForward`.
 - `ManagedProcessTerminator.swift`: terminates app-managed processes and waits briefly for exit.
 - `TunnelSummary.swift`: summarizes running, failed, and total tunnel counts.
 - `TunnelManager.swift`: manages tunnel lists, runtime state, SSH `Process` lifecycle, and validation before saving.
+- `SystemRecoveryMonitor.swift`: bridges network path, sleep, and wake events through `NWPathMonitor` and `NSWorkspace` notifications.
 - `AppStrings.swift`: App-layer localization entry point for menu text, buttons, forms, help text, and app-generated errors; packaged apps load SwiftPM resource bundles from `Contents/Resources`, while development and tests fall back to `Bundle.module`.
 - `TunnelMenuView.swift`: menu bar UI for adding, editing, starting, stopping, opening URLs, and deleting tunnels.
 - `TunnelModeFormFields.swift`: centralizes which form fields each tunnel mode should display.
@@ -99,8 +102,13 @@ Each tunnel is represented by `TunnelConfig`. Core fields:
 - `sshHost`, `remoteHost`, `remotePort`, `localHost`, `localPort`: Remote Forward SSH Host, remote listener, and local target.
 - `sshHost`, `localHost`, `localPort`: used by Dynamic SOCKS mode.
 - `sshConfigName`: used by SSH Config mode.
+- `tags`: normalized tags, limited to 10 entries of at most 32 characters and deduplicated case-insensitively.
+- `isFavorite`: favorite state.
+- `manualOrder`: stable manual sort position.
+- `lastUsedAt`: most recent successful SSH process start time.
+- `isAutoReconnectEnabled`: whether recoverable failures should reconnect automatically; defaults to `false` for legacy JSON.
 
-Legacy JSON without a `mode` field decodes as `localForward` so older configs remain readable.
+Legacy JSON without a `mode` field decodes as `localForward`. Missing organization and automatic-reconnection fields use compatible defaults; when every configuration lacks `manualOrder`, the original JSON array order becomes the initial manual order.
 
 Before the first `remoteForward` write to an existing configuration, `TunnelConfigStore` copies the original bytes to `tunnels.json.pre-remote-forward.bak` with `0600` permissions. Later saves do not overwrite this backup.
 
@@ -240,6 +248,12 @@ Common errors include:
 
 Errors are shown under the affected tunnel card.
 
+## Automatic Reconnection Lifecycle
+
+Each runtime record owns an independent `TunnelRecoveryState`, SSH process, retry task, and stable-operation timer. Manual start, manual stop, and recovery advance a run generation. Process termination callbacks may mutate state only when both the generation and process instance still match, preventing stale callbacks from restarting or overwriting a newer run.
+
+Automatic reconnection is disabled by default. When enabled, recoverable failures use 2, 5, 10, 30, and 60 second backoff intervals capped at 60 seconds; five minutes of stable operation resets the sequence. Authentication failures, host-key failures, listener conflicts, forwarding failures, and configuration errors are permanent failures. A transient `ssh -G` timeout during automatic recovery is retried at the next interval, while a manual start reports it immediately. Network loss or sleep cancels pending retry and stability tasks. Recovery waits two seconds for network stability and starts at most one replacement process. Stop advances the generation and cancels all pending work even while connecting or waiting.
+
 ## Test Strategy
 
 `Tests/SSHTunnelCoreTests` covers core logic:
@@ -250,6 +264,7 @@ Errors are shown under the affected tunnel card.
 - `localforward` parsing from `ssh -G` output.
 - Listening-port parsing from `lsof` output.
 - Runtime status resolution.
+- Automatic-reconnection backoff and reset, stop reasons, network and sleep pauses, stale callbacks, and permanent-failure classification.
 - English and Simplified Chinese display text for runtime statuses, summaries, and validation errors.
 - Managed process termination.
 - Tunnel summary counts.
@@ -280,14 +295,17 @@ Recommended manual flow:
 8. Start a valid SSH Config tunnel and confirm `openURL` works.
 9. Edit a tunnel and confirm the JSON file updates. Start deleting it and cancel to confirm the configuration remains, then confirm deletion and verify it is removed from the JSON file.
 10. Launch the app with English and Simplified Chinese system languages and confirm menus, forms, buttons, status summaries, and app-generated errors follow the system language.
+11. Enable automatic reconnection for a sanitized test tunnel, interrupt a recoverable connection, and confirm the 2, 5, 10, 30, and 60 second sequence without a tight retry loop.
+12. Stop while Connecting, Waiting for Network, and Waiting to Retry, and confirm the tunnel remains stopped.
+13. Disconnect the network or sleep the Mac while an enabled tunnel is running; after recovery, confirm it waits two seconds and starts only one replacement process.
+14. Trigger authentication, host-key, and local-port-conflict failures and confirm they remain failed without automatic retries and expose only sanitized diagnostics.
 
 ## Current Boundaries
 
 The current version intentionally stays small:
 
 - macOS only.
-- Supports Local Forward, Dynamic SOCKS, and SSH Config entries with `LocalForward`.
+- Each configuration contains one Local Forward, Remote Forward, Dynamic SOCKS, or SSH Config forwarding rule; multi-rule profiles are not supported.
 - Does not edit `~/.ssh/config`.
 - Does not install a login item.
-- Does not auto-reconnect.
-- Does not support remote forwarding.
+- Does not run arbitrary remote probes to verify Remote Forward listeners or support remote port `0`.

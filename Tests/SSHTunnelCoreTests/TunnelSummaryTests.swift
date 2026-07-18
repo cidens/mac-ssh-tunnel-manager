@@ -16,11 +16,13 @@ import Testing
         .portListening,
         .failed,
         .externalListening,
+        .waitingForNetwork,
+        .waitingToReconnect,
         .stopped
     ])
 
     #expect(summary.runningCount == 2)
-    #expect(summary.failedCount == 2)
-    #expect(summary.totalCount == 5)
-    #expect(summary.displayText(language: "zh-Hans") == "运行 2 · 异常 2 · 总数 5")
+    #expect(summary.failedCount == 4)
+    #expect(summary.totalCount == 7)
+    #expect(summary.displayText(language: "zh-Hans") == "运行 2 · 异常 4 · 总数 7")
 }

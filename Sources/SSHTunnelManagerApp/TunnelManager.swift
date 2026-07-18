@@ -7,6 +7,10 @@ struct TunnelRuntimeState {
     var isPortListening = false
     var lastError = ""
     var stderrTail: StderrTailBuffer?
+    var recovery = TunnelRecoveryState()
+    var retryTask: Task<Void, Never>?
+    var stableResetTask: Task<Void, Never>?
+    var allowsRiskyRestart = false
 }
 
 struct TunnelRiskWarning: Identifiable {
@@ -65,13 +69,18 @@ final class TunnelManager: ObservableObject {
     private var statusRefreshTask: Task<Void, Never>?
     private var willTerminateObserver: NSObjectProtocol?
     private var pendingRiskOperation: (() -> Void)?
+    private let recoveryMonitor: SystemRecoveryMonitor
+    private var isNetworkAvailable = true
+    private var isSystemSleeping = false
 
     init(
         store: TunnelConfigStore = TunnelManager.defaultStore(),
-        sshConfigResolver: any SSHConfigResolving = SystemSSHConfigResolver()
+        sshConfigResolver: any SSHConfigResolving = SystemSSHConfigResolver(),
+        recoveryMonitor: SystemRecoveryMonitor = SystemRecoveryMonitor()
     ) {
         self.store = store
         self.sshConfigResolver = sshConfigResolver
+        self.recoveryMonitor = recoveryMonitor
         do {
             tunnels = try store.load()
             if tunnels.allSatisfy({ $0.manualOrder == nil }) {
@@ -100,15 +109,21 @@ final class TunnelManager: ObservableObject {
                 self?.prepareForApplicationTermination()
             }
         }
+        recoveryMonitor.onNetworkAvailabilityChanged = { [weak self] isAvailable in
+            self?.handleNetworkAvailabilityChanged(isAvailable)
+        }
+        recoveryMonitor.onSleep = { [weak self] in self?.handleSystemSleep() }
+        recoveryMonitor.onWake = { [weak self] in self?.handleSystemWake() }
+        recoveryMonitor.start()
     }
 
     var menuTitle: String {
-        let running = tunnels.filter { isManagedProcessRunning(for: $0) }.count
+        let running = tunnels.filter { isOperational(for: $0) }.count
         return AppStrings.menuTitle(runningCount: running)
     }
 
     var menuSystemImage: String {
-        tunnels.contains { isManagedProcessRunning(for: $0) } ? "point.3.connected.trianglepath.dotted" : "circle.dotted"
+        tunnels.contains { isOperational(for: $0) } ? "point.3.connected.trianglepath.dotted" : "circle.dotted"
     }
 
     var summary: TunnelSummary {
@@ -126,6 +141,18 @@ final class TunnelManager: ObservableObject {
 
     func status(for tunnel: TunnelConfig) -> TunnelRuntimeStatus {
         let runtime = runtimes[tunnel.id] ?? TunnelRuntimeState()
+        switch runtime.recovery.phase {
+        case .connecting:
+            return .connecting
+        case .waitingForNetwork:
+            return .waitingForNetwork
+        case .waitingToReconnect:
+            return .waitingToReconnect
+        case .failed:
+            return .failed
+        case .stopped, .running:
+            break
+        }
         return TunnelRuntimeStatusResolver.status(
             isManagedProcessRunning: runtime.process?.isRunning == true,
             isPortListening: runtime.isPortListening,
@@ -139,6 +166,15 @@ final class TunnelManager: ObservableObject {
 
     func isManagedProcessRunning(for tunnel: TunnelConfig) -> Bool {
         runtimes[tunnel.id]?.process?.isRunning == true
+    }
+
+    func isRunRequested(for tunnel: TunnelConfig) -> Bool {
+        runtimes[tunnel.id]?.recovery.wantsToRun == true
+    }
+
+    private func isOperational(for tunnel: TunnelConfig) -> Bool {
+        let currentStatus = status(for: tunnel)
+        return currentStatus == .running || currentStatus == .portListening
     }
 
     func displayedTunnels(
@@ -265,7 +301,7 @@ final class TunnelManager: ObservableObject {
         onSuccess: (() -> Void)?
     ) -> Bool {
         addError = ""
-        guard !isManagedProcessRunning(for: tunnel) else {
+        guard !isRunRequested(for: tunnel) else {
             addError = AppStrings.stopBeforeEditing()
             return false
         }
@@ -320,6 +356,34 @@ final class TunnelManager: ObservableObject {
     }
 
     private func start(_ tunnel: TunnelConfig, allowRiskyBind: Bool) {
+        var runtime = runtimes[tunnel.id] ?? TunnelRuntimeState()
+        guard runtime.process?.isRunning != true else { return }
+        runtime.retryTask?.cancel()
+        runtime.stableResetTask?.cancel()
+        runtime.retryTask = nil
+        runtime.stableResetTask = nil
+        _ = runtime.recovery.setNetworkAvailable(tunnel.isAutoReconnectEnabled ? isNetworkAvailable : true)
+        _ = runtime.recovery.setSleeping(tunnel.isAutoReconnectEnabled ? isSystemSleeping : false)
+        let generation = runtime.recovery.requestStart()
+        runtime.lastError = ""
+        runtime.allowsRiskyRestart = allowRiskyBind
+        runtimes[tunnel.id] = runtime
+
+        guard case .connecting = runtime.recovery.phase else { return }
+        launch(
+            tunnel,
+            generation: generation,
+            allowRiskyBind: allowRiskyBind,
+            isAutomaticRecovery: false
+        )
+    }
+
+    private func launch(
+        _ tunnel: TunnelConfig,
+        generation: UInt64,
+        allowRiskyBind: Bool,
+        isAutomaticRecovery: Bool
+    ) {
         do {
             try commandBuilder.validate(tunnel)
             try validateGeneratedForwardingHost(tunnel)
@@ -327,10 +391,14 @@ final class TunnelManager: ObservableObject {
                 var runtime = runtimes[tunnel.id] ?? TunnelRuntimeState()
                 runtime.process = nil
                 runtime.isPortListening = true
-                runtime.lastError = AppStrings.localPortAlreadyListeningOutsideApp(
-                    host: tunnel.localHost,
-                    port: tunnel.localPort
+                runtime.lastError = sanitizedDiagnostic(
+                    AppStrings.localPortAlreadyListeningOutsideApp(
+                        host: tunnel.localHost,
+                        port: tunnel.localPort
+                    ),
+                    for: tunnel
                 )
+                _ = runtime.recovery.requestStop(reason: .nonRetryableFailure)
                 runtimes[tunnel.id] = runtime
                 return
             }
@@ -346,17 +414,25 @@ final class TunnelManager: ObservableObject {
                 case .missingLocalForward:
                     var runtime = runtimes[tunnel.id] ?? TunnelRuntimeState()
                     runtime.process = nil
-                    runtime.lastError = TunnelValidationError.sshConfigMissingLocalForward(sshConfigName).localizedDescription
+                    runtime.lastError = sanitizedDiagnostic(
+                        TunnelValidationError.sshConfigMissingLocalForward(sshConfigName).localizedDescription,
+                        for: tunnel
+                    )
+                    _ = runtime.recovery.requestStop(reason: .nonRetryableFailure)
                     runtimes[tunnel.id] = runtime
                     return
                 case .timedOut:
-                    var runtime = runtimes[tunnel.id] ?? TunnelRuntimeState()
-                    runtime.process = nil
-                    runtime.lastError = TunnelValidationError.sshConfigValidationTimedOut(
+                    let error = TunnelValidationError.sshConfigValidationTimedOut(
                         sshConfigName,
                         Self.sshConfigValidationTimeoutSeconds
-                    ).localizedDescription
-                    runtimes[tunnel.id] = runtime
+                    )
+                    recordLaunchFailure(
+                        error.localizedDescription,
+                        for: tunnel,
+                        generation: generation,
+                        retryable: isAutomaticRecovery,
+                        isAutomaticRecovery: isAutomaticRecovery
+                    )
                     return
                 }
             } else {
@@ -381,6 +457,8 @@ final class TunnelManager: ObservableObject {
             }
 
             var runtime = runtimes[tunnel.id] ?? TunnelRuntimeState()
+            guard runtime.recovery.generation == generation,
+                  runtime.recovery.wantsToRun else { return }
             runtime.lastError = ""
             runtime.process = process
             runtime.stderrTail = stderrTail
@@ -395,58 +473,264 @@ final class TunnelManager: ObservableObject {
                         return
                     }
                     current.process = nil
-                    current.lastError = message
+                    current.stableResetTask?.cancel()
+                    current.stableResetTask = nil
+                    let rawDiagnostic = message.isEmpty
+                        ? AppStrings.sshProcessExited(code: finishedProcess.terminationStatus)
+                        : message
+                    let currentTunnel = self?.tunnels.first(where: { $0.id == tunnel.id }) ?? tunnel
+                    let retryable = TunnelFailureClassifier.isRetryable(stderr: rawDiagnostic)
+                    current.lastError = self?.sanitizedDiagnostic(rawDiagnostic, for: currentTunnel)
+                        ?? rawDiagnostic
+                    let delay = current.recovery.processExited(
+                        generation: generation,
+                        retryable: retryable,
+                        autoReconnectEnabled: currentTunnel.isAutoReconnectEnabled
+                    )
                     self?.runtimes[tunnel.id] = current
+                    if let delay {
+                        self?.scheduleRetry(for: currentTunnel, generation: generation, delay: delay)
+                    }
                     self?.refreshStatuses()
                 }
             }
 
             try process.run()
+            runtime = runtimes[tunnel.id] ?? runtime
+            guard runtime.recovery.markRunning(generation: generation) else {
+                ManagedProcessTerminator.terminateAndWait(process, timeout: 1, forceKillAfterTimeout: true)
+                return
+            }
+            runtime.stableResetTask = stableResetTask(for: tunnel.id, generation: generation)
+            runtimes[tunnel.id] = runtime
             markTunnelUsed(tunnel.id)
             refreshStatuses()
         } catch let confirmation as TunnelRiskConfirmationRequired {
+            stopRecoveryTasks(for: tunnel.id, reason: .userRequested, clearError: true)
             requestRiskConfirmation(title: confirmation.title, message: confirmation.message) { [weak self] in
                 self?.start(tunnel, allowRiskyBind: true)
             }
         } catch {
-            var runtime = runtimes[tunnel.id] ?? TunnelRuntimeState()
-            runtime.process = nil
-            runtime.lastError = error.localizedDescription
+            let retryableValidationError = (error as? TunnelValidationError)
+                .map(TunnelFailureClassifier.isRetryable(validationError:))
+                ?? false
+            recordLaunchFailure(
+                error.localizedDescription,
+                for: tunnel,
+                generation: generation,
+                retryable: isAutomaticRecovery && retryableValidationError,
+                isAutomaticRecovery: isAutomaticRecovery
+            )
+        }
+    }
+
+    private func recordLaunchFailure(
+        _ message: String,
+        for tunnel: TunnelConfig,
+        generation: UInt64,
+        retryable: Bool,
+        isAutomaticRecovery: Bool
+    ) {
+        guard var runtime = runtimes[tunnel.id],
+              runtime.recovery.generation == generation,
+              runtime.recovery.wantsToRun else { return }
+        runtime.process = nil
+        runtime.lastError = sanitizedDiagnostic(message, for: tunnel)
+        if isAutomaticRecovery && retryable {
+            let delay = runtime.recovery.processExited(
+                generation: generation,
+                retryable: true,
+                autoReconnectEnabled: tunnel.isAutoReconnectEnabled
+            )
+            runtimes[tunnel.id] = runtime
+            if let delay {
+                scheduleRetry(for: tunnel, generation: generation, delay: delay)
+            }
+        } else {
+            _ = runtime.recovery.requestStop(reason: .nonRetryableFailure)
             runtimes[tunnel.id] = runtime
         }
     }
 
     func stop(_ tunnel: TunnelConfig) {
-        guard let runtime = runtimes[tunnel.id] else {
+        guard var runtime = runtimes[tunnel.id] else {
             return
         }
+        _ = runtime.recovery.requestStop(reason: .userRequested)
+        runtime.retryTask?.cancel()
+        runtime.stableResetTask?.cancel()
+        runtime.retryTask = nil
+        runtime.stableResetTask = nil
+        runtime.lastError = ""
         if let process = runtime.process {
-            ManagedProcessTerminator.terminateAndWait(process, timeout: 1)
+            ManagedProcessTerminator.terminateAndWait(
+                process,
+                timeout: 1,
+                forceKillAfterTimeout: true
+            )
         }
-        var stoppedRuntime = runtime
-        stoppedRuntime.process = nil
-        runtimes[tunnel.id] = stoppedRuntime
+        runtime.process = nil
+        runtimes[tunnel.id] = runtime
         refreshStatuses()
+    }
+
+    private func scheduleRetry(for tunnel: TunnelConfig, generation: UInt64, delay: TimeInterval) {
+        var runtime = runtimes[tunnel.id] ?? TunnelRuntimeState()
+        runtime.retryTask?.cancel()
+        runtime.retryTask = Task { [weak self] in
+            do {
+                try await Task.sleep(for: .seconds(delay))
+            } catch {
+                return
+            }
+            guard !Task.isCancelled, let self,
+                  var current = self.runtimes[tunnel.id],
+                  current.recovery.beginScheduledRetry(generation: generation) else {
+                return
+            }
+            current.retryTask = nil
+            let allowsRiskyRestart = current.allowsRiskyRestart
+            self.runtimes[tunnel.id] = current
+            self.launch(
+                tunnel,
+                generation: generation,
+                allowRiskyBind: allowsRiskyRestart,
+                isAutomaticRecovery: true
+            )
+        }
+        runtimes[tunnel.id] = runtime
+    }
+
+    private func stableResetTask(for tunnelID: TunnelConfig.ID, generation: UInt64) -> Task<Void, Never> {
+        Task { [weak self] in
+            do {
+                try await Task.sleep(for: .seconds(TunnelRecoveryPolicy.stableRunResetInterval))
+            } catch {
+                return
+            }
+            guard !Task.isCancelled, let self,
+                  var runtime = self.runtimes[tunnelID],
+                  runtime.recovery.markStable(generation: generation) else {
+                return
+            }
+            runtime.stableResetTask = nil
+            self.runtimes[tunnelID] = runtime
+        }
+    }
+
+    private func stopRecoveryTasks(
+        for tunnelID: TunnelConfig.ID,
+        reason: TunnelStopReason,
+        clearError: Bool
+    ) {
+        guard var runtime = runtimes[tunnelID] else { return }
+        _ = runtime.recovery.requestStop(reason: reason)
+        runtime.retryTask?.cancel()
+        runtime.stableResetTask?.cancel()
+        runtime.retryTask = nil
+        runtime.stableResetTask = nil
+        if clearError { runtime.lastError = "" }
+        runtimes[tunnelID] = runtime
+    }
+
+    func handleNetworkAvailabilityChanged(_ available: Bool) {
+        isNetworkAvailable = available
+        for tunnel in tunnels where tunnel.isAutoReconnectEnabled {
+            guard var runtime = runtimes[tunnel.id], runtime.recovery.wantsToRun else { continue }
+            let shouldRecover = runtime.recovery.setNetworkAvailable(available)
+            if !available {
+                runtime.retryTask?.cancel()
+                runtime.stableResetTask?.cancel()
+                runtime.retryTask = nil
+                runtime.stableResetTask = nil
+            }
+            runtimes[tunnel.id] = runtime
+            if shouldRecover { scheduleNetworkRecovery(for: tunnel) }
+        }
+    }
+
+    func handleSystemSleep() {
+        isSystemSleeping = true
+        for tunnel in tunnels where tunnel.isAutoReconnectEnabled {
+            guard var runtime = runtimes[tunnel.id], runtime.recovery.wantsToRun else { continue }
+            _ = runtime.recovery.setSleeping(true)
+            runtime.retryTask?.cancel()
+            runtime.stableResetTask?.cancel()
+            runtime.retryTask = nil
+            runtime.stableResetTask = nil
+            runtimes[tunnel.id] = runtime
+        }
+    }
+
+    func handleSystemWake() {
+        isSystemSleeping = false
+        for tunnel in tunnels where tunnel.isAutoReconnectEnabled {
+            guard var runtime = runtimes[tunnel.id], runtime.recovery.wantsToRun else { continue }
+            let shouldRecover = runtime.recovery.setSleeping(false)
+            runtimes[tunnel.id] = runtime
+            if shouldRecover { scheduleNetworkRecovery(for: tunnel) }
+        }
+    }
+
+    private func scheduleNetworkRecovery(for tunnel: TunnelConfig) {
+        var runtime = runtimes[tunnel.id] ?? TunnelRuntimeState()
+        runtime.retryTask?.cancel()
+        runtime.retryTask = Task { [weak self] in
+            do {
+                try await Task.sleep(for: .seconds(TunnelRecoveryPolicy.networkStabilityInterval))
+            } catch {
+                return
+            }
+            guard !Task.isCancelled, let self,
+                  self.isNetworkAvailable, !self.isSystemSleeping,
+                  var current = self.runtimes[tunnel.id] else { return }
+            current.retryTask = nil
+            if current.process?.isRunning == true {
+                if current.recovery.resumeRunningProcessAfterRecovery() {
+                    current.stableResetTask = self.stableResetTask(
+                        for: tunnel.id,
+                        generation: current.recovery.generation
+                    )
+                }
+                self.runtimes[tunnel.id] = current
+                return
+            }
+            guard let generation = current.recovery.beginRecoveryAfterNetworkStabilized() else {
+                self.runtimes[tunnel.id] = current
+                return
+            }
+            let allowsRiskyRestart = current.allowsRiskyRestart
+            self.runtimes[tunnel.id] = current
+            self.launch(
+                tunnel,
+                generation: generation,
+                allowRiskyBind: allowsRiskyRestart,
+                isAutomaticRecovery: true
+            )
+        }
+        runtimes[tunnel.id] = runtime
     }
 
     @discardableResult
     func stopAllManagedTunnels(forceKillAfterTimeout: Bool = false) -> Int {
         var stoppedCount = 0
-        for (id, runtime) in runtimes {
-            guard let process = runtime.process,
-                  process.isRunning else {
-                continue
+        for (id, storedRuntime) in runtimes {
+            var runtime = storedRuntime
+            _ = runtime.recovery.requestStop(reason: .applicationTerminating)
+            runtime.retryTask?.cancel()
+            runtime.stableResetTask?.cancel()
+            runtime.retryTask = nil
+            runtime.stableResetTask = nil
+            if let process = runtime.process, process.isRunning {
+                ManagedProcessTerminator.terminateAndWait(
+                    process,
+                    timeout: 1,
+                    forceKillAfterTimeout: forceKillAfterTimeout
+                )
+                stoppedCount += 1
             }
-
-            ManagedProcessTerminator.terminateAndWait(
-                process,
-                timeout: 1,
-                forceKillAfterTimeout: forceKillAfterTimeout
-            )
-            var stoppedRuntime = runtime
-            stoppedRuntime.process = nil
-            runtimes[id] = stoppedRuntime
-            stoppedCount += 1
+            runtime.process = nil
+            runtimes[id] = runtime
         }
         refreshStatuses()
         return stoppedCount
@@ -471,6 +755,7 @@ final class TunnelManager: ObservableObject {
 
     func prepareForApplicationTermination() {
         stopAllManagedTunnels(forceKillAfterTimeout: true)
+        recoveryMonitor.stop()
         refreshTimer?.invalidate()
         statusRefreshTask?.cancel()
         statusRefreshTask = nil
@@ -492,9 +777,6 @@ final class TunnelManager: ObservableObject {
             var runtime = runtimes[tunnel.id] ?? TunnelRuntimeState()
             if !Self.shouldCheckLocalPort(for: tunnel) {
                 runtime.isPortListening = false
-            }
-            if runtime.process?.isRunning == false {
-                runtime.process = nil
             }
             runtimes[tunnel.id] = runtime
         }
@@ -580,9 +862,10 @@ final class TunnelManager: ObservableObject {
     private func statusSortRank(_ status: TunnelRuntimeStatus) -> Int {
         switch status {
         case .failed: return 0
-        case .running, .portListening: return 1
-        case .externalListening: return 2
-        case .stopped: return 3
+        case .connecting, .waitingForNetwork, .waitingToReconnect: return 1
+        case .running, .portListening: return 2
+        case .externalListening: return 3
+        case .stopped: return 4
         }
     }
 
@@ -614,6 +897,18 @@ final class TunnelManager: ObservableObject {
             fields.append(tunnel.sshConfigName ?? "")
         }
         return fields.joined(separator: " ")
+    }
+
+    private func sanitizedDiagnostic(_ message: String, for tunnel: TunnelConfig) -> String {
+        TunnelDiagnosticSanitizer.sanitize(
+            message,
+            sensitiveValues: [
+                tunnel.sshHost,
+                tunnel.sshConfigName ?? "",
+                tunnel.localHost,
+                tunnel.remoteHost
+            ]
+        )
     }
 
     private func validatedTunnel(

@@ -96,6 +96,18 @@ enum AppStrings {
         string("error.stopBeforeEditing", language: language)
     }
 
+    static func formAutoReconnect(language: String? = nil) -> String {
+        string("form.autoReconnect", language: language)
+    }
+
+    static func autoReconnectHelp(language: String? = nil) -> String {
+        string("form.autoReconnect.help", language: language)
+    }
+
+    static func sshProcessExited(code: Int32, language: String? = nil) -> String {
+        format("error.sshProcessExited", language: language, code)
+    }
+
     static func headerSubtitle(language: String? = nil) -> String {
         string("header.subtitle", language: language)
     }

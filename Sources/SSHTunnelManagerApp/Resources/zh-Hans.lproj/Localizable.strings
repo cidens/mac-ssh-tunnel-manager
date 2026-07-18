@@ -74,6 +74,8 @@
 "placeholder.sshConfig" = "例如：example-service";
 "placeholder.openURL" = "可选，例如 http://127.0.0.1:8088";
 "form.tags" = "标签";
+"form.autoReconnect" = "自动重连";
+"form.autoReconnect.help" = "网络或睡眠恢复后重试可恢复故障";
 "placeholder.tags" = "逗号分隔，最多 10 个";
 "filter.search" = "搜索隧道";
 "filter.favorites" = "仅收藏";
@@ -97,3 +99,4 @@
 "error.failedToSaveTunnels" = "保存隧道失败：%@";
 "error.localPortAlreadyListeningOutsideApp" = "本地端口 %@:%d 已被本应用之外的进程监听。";
 "error.stopBeforeEditing" = "编辑前请先停止这个隧道。";
+"error.sshProcessExited" = "SSH 进程已退出，状态码 %d。";
