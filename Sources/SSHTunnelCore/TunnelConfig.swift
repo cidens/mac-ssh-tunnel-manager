@@ -251,7 +251,7 @@ public enum TunnelValidationError: Error, Equatable, LocalizedError {
     case invalidPort(String)
     case invalidURL(String)
     case localPortOccupied(String, Int)
-    case sshConfigMissingLocalForward(String)
+    case sshConfigMissingForwardingDirective(String)
     case sshConfigValidationTimedOut(String, Int)
     case sshHostContainsForwardingDirectives(String)
 
@@ -271,8 +271,8 @@ public enum TunnelValidationError: Error, Equatable, LocalizedError {
             return CoreStrings.format("error.invalidURL", language: language, fieldName(field, language: language))
         case .localPortOccupied(let host, let port):
             return CoreStrings.format("error.localPortOccupied", language: language, host, port)
-        case .sshConfigMissingLocalForward(let name):
-            return CoreStrings.format("error.sshConfigMissingLocalForward", language: language, name)
+        case .sshConfigMissingForwardingDirective(let name):
+            return CoreStrings.format("error.sshConfigMissingForwardingDirective", language: language, name)
         case .sshConfigValidationTimedOut(let name, let seconds):
             return CoreStrings.format("error.sshConfigValidationTimedOut", language: language, name, seconds)
         case .sshHostContainsForwardingDirectives(let name):

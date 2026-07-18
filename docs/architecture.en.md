@@ -33,12 +33,14 @@ Key file responsibilities:
 - `TunnelDiagnostics.swift`: stable error categories, failure-cycle notification deduplication, and structured reports that accept no configuration endpoints.
 - `ConnectionNotificationSettings.swift`: default-disabled notification settings and an independent atomic store.
 - `PortStatusParser.swift`: parses `lsof` output to detect local listening ports.
-- `SSHConfigOutputParser.swift`: parses `ssh -G` output to confirm SSH Config mode has a `LocalForward`.
+- `SSHConfigDiscovery.swift`: read-only discovery of explicit Host aliases across `~/.ssh/config` and accessible `Include` files, including cycle limits and `Match exec` detection.
+- `SSHConfigOutputParser.swift`: parses local, remote, and dynamic forwarding plus listener exposure from `ssh -G` output.
 - `ManagedProcessTerminator.swift`: terminates app-managed processes and waits briefly for exit.
 - `TunnelSummary.swift`: summarizes running, failed, and total tunnel counts.
 - `TunnelManager.swift`: manages tunnel lists, runtime state, SSH `Process` lifecycle, and validation before saving.
 - `SystemRecoveryMonitor.swift`: bridges network path, sleep, and wake events through `NWPathMonitor` and `NSWorkspace` notifications.
 - `ConnectionNotificationController.swift`: requests permission only after opt-in and isolates permission, delivery, and persistence failures from tunnel lifecycle state.
+- `SSHConfigImportController.swift` and `SSHConfigImportView.swift`: discovery, manual aliases, preview confirmation, duplicate handling, risk warnings, and batch import UI.
 - `AppStrings.swift`: App-layer localization entry point for menu text, buttons, forms, help text, and app-generated errors; packaged apps load SwiftPM resource bundles from `Contents/Resources`, while development and tests fall back to `Bundle.module`.
 - `TunnelMenuView.swift`: menu bar UI for adding, editing, starting, stopping, opening URLs, and deleting tunnels.
 - `TunnelModeFormFields.swift`: centralizes which form fields each tunnel mode should display.
@@ -178,7 +180,7 @@ ALL_PROXY=socks5h://127.0.0.1:1080 git fetch
 
 ### SSH Config
 
-SSH Config mode stores only `sshConfigName`; the user's `~/.ssh/config` owns the forwarding declaration:
+SSH Config mode stores only `sshConfigName`; the user's `~/.ssh/config` owns `LocalForward`, `RemoteForward`, or `DynamicForward` declarations:
 
 ```bash
 /usr/bin/ssh -N \
@@ -187,13 +189,15 @@ SSH Config mode stores only `sshConfigName`; the user's `~/.ssh/config` owns the
   sshConfigName
 ```
 
-Before saving and starting, the app runs:
+For previews and before saving or starting, the app uses the fixed executable:
 
 ```bash
-ssh -G sshConfigName
+/usr/bin/ssh -G sshConfigName
 ```
 
-It parses the output, requires at least one `localforward`, and checks its local bind address. A non-loopback bind requires confirmation before saving or starting. The `ssh -G` validation has a 10-second timeout so configurations with `Match exec`, `ProxyJump`, or slow DNS are not rejected too aggressively.
+It requires at least one `localforward`, `remoteforward`, or `dynamicforward`, previews listener exposure, and requires confirmation for potentially exposed listeners. Each `ssh -G` call has a 10-second timeout.
+
+Import scans the default `~/.ssh/config` and accessible `Include` files read-only in the background. Canonical paths plus depth and file-count limits prevent cycles. It lists explicit non-wildcard Host aliases, deduplicates them case-insensitively, and accepts concrete aliases manually for wildcard rules. Scanning does not run SSH. If any scanned file contains `Match exec`, the first preview requires confirmation; canceling invokes no `ssh -G`. Preview concurrency is capped at four, and failed, timed-out, empty, or duplicate entries cannot be imported. Batch import stores Host references only, keeps automatic reconnection disabled, and starts no connection.
 
 ## Runtime State
 
@@ -233,7 +237,7 @@ Validation rules:
 - Local bind host still allows exact `*` for intentional LAN access, but non-loopback binds require explicit confirmation before saving or starting; remote host does not allow wildcards.
 - A Remote Forward listener allows exact `*`, but non-loopback listeners require confirmation; its local target does not allow wildcards.
 - `127.0.0.1`, `localhost`, `::1`, and `[::1]` are treated as loopback addresses. Other local bind values are treated as potentially exposed without DNS resolution.
-- SSH Config mode checks the local bind addresses from resolved `LocalForward` entries and uses the same confirmation.
+- SSH Config mode checks resolved local, remote, and dynamic listener addresses and applies the corresponding confirmation.
 - `openURL` accepts only `http` or `https` URLs with a host.
 - Ports must be in `1...65535`.
 
@@ -246,7 +250,7 @@ Common errors include:
 - Local port already occupied.
 - SSH Host does not exist.
 - Authentication failed or requires interactive approval.
-- SSH Config mode has no `LocalForward`.
+- SSH Config mode has no local, remote, or dynamic forwarding directive.
 - `ExitOnForwardFailure=yes` makes SSH exit when forwarding fails.
 
 Errors are shown under the affected tunnel card.
@@ -268,9 +272,10 @@ Runtime details retain only a sanitized summary, status-change time, exit code, 
 `Tests/SSHTunnelCoreTests` covers core logic:
 
 - JSON persistence and legacy configuration compatibility.
-- Command generation for Local Forward, Dynamic SOCKS, and SSH Config modes.
+- Command generation for Local Forward, Remote Forward, Dynamic SOCKS, and SSH Config modes.
 - Host, port, and URL validation.
-- `localforward` parsing from `ssh -G` output.
+- SSH Config Include discovery, cycle limits, source immutability, and `Match exec` detection.
+- `localforward`, `remoteforward`, and `dynamicforward` parsing and exposure classification from `ssh -G` output.
 - Listening-port parsing from `lsof` output.
 - Runtime status resolution.
 - Automatic-reconnection backoff and reset, stop reasons, network and sleep pauses, stale callbacks, and permanent-failure classification.
@@ -288,6 +293,7 @@ Runtime details retain only a sanitized summary, status-change time, exit code, 
 - SSH Config shows only the config alias field.
 - Representative App-layer UI text and runtime errors in English and Simplified Chinese.
 - Matching key sets across English and Simplified Chinese `.strings` files for both App and Core layers.
+- SSH Config confirmation gating, three forwarding previews, case-insensitive duplicate handling, batch persistence, and rollback.
 
 SwiftUI rendering and system `Process` lifecycle are mainly validated by compilation, core tests, and manual acceptance testing.
 
@@ -301,21 +307,22 @@ Recommended manual flow:
 4. Start the Local Forward tunnel and confirm status moves from `Running` to `Listening`.
 5. Add a Dynamic SOCKS tunnel with a sanitized Host replaced by your own SSH Host and confirm the local SOCKS port reaches `Listening`.
 6. Stop the tunnel and confirm the app only stops SSH processes it started.
-7. Add an SSH Config tunnel and confirm nonexistent config names or configs without `LocalForward` are rejected.
-8. Start a valid SSH Config tunnel and confirm `openURL` works.
-9. Edit a tunnel and confirm the JSON file updates. Start deleting it and cancel to confirm the configuration remains, then confirm deletion and verify it is removed from the JSON file.
-10. Launch the app with English and Simplified Chinese system languages and confirm menus, forms, buttons, status summaries, and app-generated errors follow the system language.
-11. Enable automatic reconnection for a sanitized test tunnel, interrupt a recoverable connection, and confirm the 2, 5, 10, 30, and 60 second sequence without a tight retry loop.
-12. Stop while Connecting, Waiting for Network, and Waiting to Retry, and confirm the tunnel remains stopped.
-13. Disconnect the network or sleep the Mac while an enabled tunnel is running; after recovery, confirm it waits two seconds and starts only one replacement process.
-14. Trigger authentication, host-key, and local-port-conflict failures and confirm they remain failed without automatic retries and expose only sanitized diagnostics.
+7. Open Import SSH Config and confirm explicit Hosts are discovered, existing aliases cannot be selected again, wildcard Hosts accept a concrete alias manually, and previews show forwarding type and listener exposure.
+8. If the configuration contains `Match exec`, cancel the first warning and confirm no preview runs, then approve it. After import, confirm source hashes are unchanged, no connection starts, and automatic reconnection remains disabled.
+9. Add an SSH Config tunnel and confirm nonexistent aliases or aliases without any forwarding directive are rejected. Start a valid entry and confirm `openURL` works.
+10. Edit a tunnel and confirm the JSON file updates. Start deleting it and cancel to confirm the configuration remains, then confirm deletion and verify it is removed from the JSON file.
+11. Launch the app with English and Simplified Chinese system languages and confirm menus, forms, buttons, status summaries, and app-generated errors follow the system language.
+12. Enable automatic reconnection for a sanitized test tunnel, interrupt a recoverable connection, and confirm the 2, 5, 10, 30, and 60 second sequence without a tight retry loop.
+13. Stop while Connecting, Waiting for Network, and Waiting to Retry, and confirm the tunnel remains stopped.
+14. Disconnect the network or sleep the Mac while an enabled tunnel is running; after recovery, confirm it waits two seconds and starts only one replacement process.
+15. Trigger authentication, host-key, and local-port-conflict failures and confirm they remain failed without automatic retries and expose only sanitized diagnostics.
 
 ## Current Boundaries
 
 The current version intentionally stays small:
 
 - macOS only.
-- Each configuration contains one Local Forward, Remote Forward, Dynamic SOCKS, or SSH Config forwarding rule; multi-rule profiles are not supported.
+- Each manual configuration contains one Local Forward, Remote Forward, or Dynamic SOCKS rule. An SSH Config reference runs every forwarding directive resolved for that Host but does not expose per-directive editing in the app.
 - Does not edit `~/.ssh/config`.
 - Does not install a login item.
 - Does not run arbitrary remote probes to verify Remote Forward listeners or support remote port `0`.

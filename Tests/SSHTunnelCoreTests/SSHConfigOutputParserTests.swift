@@ -50,3 +50,52 @@ import Testing
 
     #expect(!SSHConfigOutputParser.hasAnyForwardingDirective(output))
 }
+
+@Test func previewsAllForwardingKindsAndListenerExposure() {
+    let output = """
+    gatewayports yes
+    localforward 18080 127.0.0.1:8080
+    remoteforward 19090 127.0.0.1:9090
+    dynamicforward 1080
+    """
+
+    let directives = SSHConfigOutputParser.forwardingDirectives(output)
+
+    #expect(directives == [
+        SSHConfigForwardingDirective(
+            kind: .local,
+            listenHost: "*",
+            listenPort: 18080,
+            target: "127.0.0.1:8080",
+            isPotentiallyExposed: true
+        ),
+        SSHConfigForwardingDirective(
+            kind: .remote,
+            listenHost: "localhost",
+            listenPort: 19090,
+            target: "127.0.0.1:9090",
+            isPotentiallyExposed: false
+        ),
+        SSHConfigForwardingDirective(
+            kind: .dynamic,
+            listenHost: "*",
+            listenPort: 1080,
+            target: nil,
+            isPotentiallyExposed: true
+        )
+    ])
+}
+
+@Test func previewsUnixSocketForwardWithoutClassifyingItAsNetworkExposure() {
+    let directives = SSHConfigOutputParser.forwardingDirectives(
+        "remoteforward /tmp/example-remote.sock /tmp/example-local.sock\n"
+    )
+
+    #expect(directives == [SSHConfigForwardingDirective(
+        kind: .remote,
+        listenHost: "/tmp/example-remote.sock",
+        listenPort: nil,
+        target: "/tmp/example-local.sock",
+        isPotentiallyExposed: false
+    )])
+}

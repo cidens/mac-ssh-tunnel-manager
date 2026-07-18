@@ -14,6 +14,7 @@
 - 默认启用全局快捷键 `⌃⌥⌘T`，菜单栏图标被隐藏时仍可展示并置前主界面。
 - 启动隧道时直接调用 `/usr/bin/ssh`，不经过 shell 字符串拼接。
 - 复用系统已有的 `~/.ssh/config`、ssh-agent 和 macOS Keychain 行为。
+- 可只读发现 `~/.ssh/config` 及可访问的 `Include` 文件中的明确 Host 别名，预览后批量导入引用。
 - 隧道配置以 JSON 保存在本机。
 - 支持通过标签、收藏、搜索和排序快速定位隧道配置。
 - 支持为单条隧道启用自动重连，并在断网或睡眠恢复后按退避策略恢复。
@@ -99,6 +100,7 @@ swift test
 - [配置组织功能验收记录](docs/validation-config-organization.md)
 - [自动重连与网络、睡眠恢复验收记录](docs/validation-auto-reconnect.md)
 - [连接通知与诊断验收记录](docs/validation-connection-notifications.md)
+- [SSH Config 只读导入验收记录](docs/validation-ssh-config-import.md)
 - [分发说明](docs/distribution.md)
 - [隐私说明](docs/privacy.md)
 - [排障手册](docs/troubleshooting.md)
@@ -254,7 +256,7 @@ ALL_PROXY=socks5h://127.0.0.1:1080 git fetch
 
 ### SSH Config
 
-适合复用 `~/.ssh/config` 中已经写好的 `LocalForward`。应用只保存 Host 别名，不会自动编辑 SSH 配置。
+适合复用 `~/.ssh/config` 中已经写好的 `LocalForward`、`RemoteForward` 或 `DynamicForward`。应用只保存 Host 别名，不会复制转发指令或编辑 SSH 配置。
 
 ```sshconfig
 Host example-service
@@ -269,6 +271,16 @@ Host example-service
 SSH Config：example-service
 打开 URL：http://127.0.0.1:18080
 ```
+
+对应 Host 必须至少包含一条 `LocalForward`、`RemoteForward` 或 `DynamicForward`。应用会检查解析后的监听地址；如果监听可能对外暴露，导入、保存或启动时会提示风险并要求确认。
+
+也可以点击面板底部的“导入 SSH Config”：
+
+1. 应用只读扫描 `~/.ssh/config` 和其中可访问的 `Include` 文件，列出不含通配符的明确 Host 别名；通配 Host 可手工输入别名。
+2. 选择别名并点击“预览所选项”。应用使用固定的 `/usr/bin/ssh -G <Host>` 解析生效配置，展示转发类型和监听范围。
+3. 如果扫描到 `Match exec`，首次预览前会说明 `ssh -G` 可能执行其中的命令，取消后不会运行 `ssh -G`。
+4. 已导入的别名默认不可重复选择；只有成功解析出转发指令的条目可以导入。
+5. 导入仅新增 SSH Config 引用，不会建立连接，也不会修改任何 SSH 配置文件。
 
 ## SSH 命令结构
 
@@ -299,25 +311,6 @@ SSH Config 模式下，应用直接使用 `~/.ssh/config` 中已有 Host：
   -o ExitOnForwardFailure=yes \
   -o ServerAliveInterval=30 \
   sshConfigName
-```
-
-SSH Config 模式要求对应 Host 至少配置一条 `LocalForward`，例如：
-
-```sshconfig
-Host example-service
-  HostName 203.0.113.10
-  User appuser
-  LocalForward 127.0.0.1:18080 127.0.0.1:8080
-```
-
-应用会检查解析后的 `LocalForward` 绑定地址；如果不是回环地址，保存或启动时会提示风险并要求确认。
-
-在应用中选择 `SSH Config` 模式后，只需要填写：
-
-```text
-名称：Example Service
-SSH Config：example-service
-打开 URL：http://127.0.0.1:18080
 ```
 
 动态 SOCKS 模式下，应用从字段生成 `-D` 参数：

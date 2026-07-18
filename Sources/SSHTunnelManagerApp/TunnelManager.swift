@@ -53,9 +53,9 @@ private struct TunnelRiskConfirmationRequired: Error {
     }
 }
 
-private enum SSHConfigLocalForwardStatus {
-    case hasLocalForward(isPotentiallyExposed: Bool)
-    case missingLocalForward
+private enum SSHConfigForwardingStatus {
+    case hasForwarding([SSHConfigForwardingDirective])
+    case missingForwarding
     case timedOut
 }
 
@@ -281,6 +281,12 @@ final class TunnelManager: ObservableObject {
         return tags.sorted { $0.localizedStandardCompare($1) == .orderedAscending }
     }
 
+    var existingSSHConfigAliases: [String] {
+        tunnels.compactMap { tunnel in
+            tunnel.mode == .sshConfig ? tunnel.sshConfigName : nil
+        }
+    }
+
     func toggleFavorite(_ tunnel: TunnelConfig) {
         guard let index = tunnels.firstIndex(where: { $0.id == tunnel.id }) else { return }
         persistChanges {
@@ -305,6 +311,49 @@ final class TunnelManager: ObservableObject {
     @discardableResult
     func addTunnel(_ draft: TunnelDraft, onSuccess: (() -> Void)? = nil) -> Bool {
         addTunnel(draft, allowRiskyBind: false, onSuccess: onSuccess)
+    }
+
+    @discardableResult
+    func importSSHConfigAliases(_ aliases: [String]) -> Bool {
+        addError = ""
+        let existingKeys = Set(existingSSHConfigAliases.map {
+            $0.folding(options: .caseInsensitive, locale: nil)
+        })
+        var seen = existingKeys
+        var imported: [TunnelConfig] = []
+        var nextManualOrder = (tunnels.compactMap(\.manualOrder).max() ?? -1) + 1
+
+        do {
+            for rawAlias in aliases {
+                let alias = rawAlias.trimmingCharacters(in: .whitespacesAndNewlines)
+                let key = alias.folding(options: .caseInsensitive, locale: nil)
+                guard seen.insert(key).inserted else { continue }
+                var tunnel = TunnelConfig(name: alias, sshConfigName: alias, openURL: nil)
+                try commandBuilder.validate(tunnel)
+                tunnel.manualOrder = nextManualOrder
+                nextManualOrder += 1
+                imported.append(tunnel)
+            }
+        } catch {
+            addError = error.localizedDescription
+            return false
+        }
+
+        guard !imported.isEmpty else {
+            addError = AppStrings.importNoNewHosts()
+            return false
+        }
+
+        let previousTunnels = tunnels
+        tunnels.append(contentsOf: imported)
+        do {
+            try save()
+            return true
+        } catch {
+            tunnels = previousTunnels
+            addError = AppStrings.failedToSaveTunnels(error.localizedDescription)
+            return false
+        }
     }
 
     @discardableResult
@@ -467,18 +516,15 @@ final class TunnelManager: ObservableObject {
             }
             if tunnel.mode == .sshConfig {
                 let sshConfigName = tunnel.sshConfigName ?? ""
-                switch sshConfigLocalForwardStatus(named: sshConfigName) {
-                case .hasLocalForward(let isPotentiallyExposed):
-                    if isPotentiallyExposed && !allowRiskyBind {
-                        throw TunnelRiskConfirmationRequired(
-                            message: AppStrings.riskyLocalBindMessage()
-                        )
-                    }
-                case .missingLocalForward:
+                switch sshConfigForwardingStatus(named: sshConfigName) {
+                case .hasForwarding(let directives):
+                    try validateSSHConfigRisk(directives, allowRiskyBind: allowRiskyBind)
+                case .missingForwarding:
                     var runtime = runtimes[tunnel.id] ?? TunnelRuntimeState()
                     runtime.process = nil
                     runtime.lastError = sanitizedDiagnostic(
-                        TunnelValidationError.sshConfigMissingLocalForward(sshConfigName).localizedDescription,
+                        TunnelValidationError.sshConfigMissingForwardingDirective(sshConfigName)
+                            .localizedDescription,
                         for: tunnel
                     )
                     let previousPhase = runtime.recovery.phase
@@ -1133,15 +1179,11 @@ final class TunnelManager: ObservableObject {
         }
         if tunnel.mode == .sshConfig {
             let sshConfigName = tunnel.sshConfigName ?? ""
-            switch sshConfigLocalForwardStatus(named: sshConfigName) {
-            case .hasLocalForward(let isPotentiallyExposed):
-                if isPotentiallyExposed && !allowRiskyBind {
-                    throw TunnelRiskConfirmationRequired(
-                        message: AppStrings.riskyLocalBindMessage()
-                    )
-                }
-            case .missingLocalForward:
-                throw TunnelValidationError.sshConfigMissingLocalForward(sshConfigName)
+            switch sshConfigForwardingStatus(named: sshConfigName) {
+            case .hasForwarding(let directives):
+                try validateSSHConfigRisk(directives, allowRiskyBind: allowRiskyBind)
+            case .missingForwarding:
+                throw TunnelValidationError.sshConfigMissingForwardingDirective(sshConfigName)
             case .timedOut:
                 throw TunnelValidationError.sshConfigValidationTimedOut(
                     sshConfigName,
@@ -1186,6 +1228,27 @@ final class TunnelManager: ObservableObject {
         }
     }
 
+    private func validateSSHConfigRisk(
+        _ directives: [SSHConfigForwardingDirective],
+        allowRiskyBind: Bool
+    ) throws {
+        guard !allowRiskyBind else { return }
+        if let remote = directives.first(where: { $0.kind == .remote && $0.isPotentiallyExposed }) {
+            throw TunnelRiskConfirmationRequired(
+                title: AppStrings.riskyRemoteBindTitle(),
+                message: AppStrings.riskyRemoteBindMessage(
+                    host: remote.listenHost,
+                    port: remote.listenPort ?? 0
+                )
+            )
+        }
+        if directives.contains(where: {
+            ($0.kind == .local || $0.kind == .dynamic) && $0.isPotentiallyExposed
+        }) {
+            throw TunnelRiskConfirmationRequired(message: AppStrings.riskyLocalBindMessage())
+        }
+    }
+
     private static func isPotentiallyExposedBindHost(_ host: String) -> Bool {
         let normalized = host.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
         return !["127.0.0.1", "localhost", "::1", "[::1]"].contains(normalized)
@@ -1225,21 +1288,16 @@ final class TunnelManager: ObservableObject {
         }
     }
 
-    private func sshConfigLocalForwardStatus(named name: String) -> SSHConfigLocalForwardStatus {
+    private func sshConfigForwardingStatus(named name: String) -> SSHConfigForwardingStatus {
         switch sshConfigResolver.resolveConfig(
             named: name,
             timeout: TimeInterval(Self.sshConfigValidationTimeoutSeconds)
         ) {
         case .resolved(let text):
-            guard SSHConfigOutputParser.hasLocalForward(text) else {
-                return .missingLocalForward
-            }
-            let isPotentiallyExposed = SSHConfigOutputParser
-                .localForwardBindHosts(text)
-                .contains(where: Self.isPotentiallyExposedBindHost)
-            return .hasLocalForward(isPotentiallyExposed: isPotentiallyExposed)
+            let directives = SSHConfigOutputParser.forwardingDirectives(text)
+            return directives.isEmpty ? .missingForwarding : .hasForwarding(directives)
         case .failed:
-            return .missingLocalForward
+            return .missingForwarding
         case .timedOut:
             return .timedOut
         }

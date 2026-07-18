@@ -146,7 +146,7 @@ import Testing
         validationError: .sshConfigValidationTimedOut("example", 10)
     ))
     #expect(!TunnelFailureClassifier.isRetryable(
-        validationError: .sshConfigMissingLocalForward("example")
+        validationError: .sshConfigMissingForwardingDirective("example")
     ))
     #expect(!TunnelFailureClassifier.isRetryable(
         validationError: .invalidPort("localPort")

@@ -20,7 +20,7 @@
 "error.invalidPort" = "%@必须在 1 到 65535 之间";
 "error.invalidURL" = "%@必须是带 host 的 http 或 https URL";
 "error.localPortOccupied" = "本地端口 %@:%d 已被监听。保存前请选择其他本地端口。";
-"error.sshConfigMissingLocalForward" = "%@ 必须是至少包含一条 LocalForward 的 SSH Config Host";
+"error.sshConfigMissingForwardingDirective" = "%@ 必须是至少包含一条 LocalForward、RemoteForward 或 DynamicForward 的 SSH Config Host";
 "error.sshConfigValidationTimedOut" = "检查 SSH Config Host %@ 超时（%d 秒）。常见原因是 Match exec、ProxyJump 或网络探测较慢；请重试，或检查 SSH 配置。";
 "error.sshHostContainsForwardingDirectives" = "SSH Host %@ 已经定义转发指令。请改用 SSH Config 模式，或选择不包含 LocalForward、RemoteForward、DynamicForward 的 Host。";
 "error.tooManyTags" = "最多只能添加 %d 个标签。";

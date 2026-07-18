@@ -20,7 +20,7 @@
 "error.invalidPort" = "%@ must be between 1 and 65535";
 "error.invalidURL" = "%@ must be a valid http or https URL";
 "error.localPortOccupied" = "Local port %@:%d is already listening. Choose another local port before saving.";
-"error.sshConfigMissingLocalForward" = "%@ must be an SSH config Host with at least one LocalForward";
+"error.sshConfigMissingForwardingDirective" = "%@ must be an SSH Config Host with at least one LocalForward, RemoteForward, or DynamicForward";
 "error.sshConfigValidationTimedOut" = "Checking SSH Config Host %@ timed out (%d seconds). Common causes include Match exec, ProxyJump, or slow DNS; retry or check your SSH config.";
 "error.sshHostContainsForwardingDirectives" = "SSH Host %@ already defines forwarding directives. Use SSH Config mode or choose a Host without LocalForward, RemoteForward, or DynamicForward.";
 "error.tooManyTags" = "Add no more than %d tags.";

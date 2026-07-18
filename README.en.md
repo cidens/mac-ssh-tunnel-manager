@@ -14,6 +14,7 @@ The app name is `SSH Tunnel Manager`; the SwiftPM executable target remains `ssh
 - Enables the global shortcut `⌃⌥⌘T` by default; the shortcut toggles the main panel even when the menu bar icon is hidden.
 - Starts tunnels by calling `/usr/bin/ssh` directly, without shell command string assembly.
 - Reuses your existing `~/.ssh/config`, ssh-agent, and macOS Keychain behavior.
+- Discovers explicit Host aliases from `~/.ssh/config` and accessible `Include` files read-only, with preview and batch import.
 - Stores tunnel definitions as local JSON.
 - Supports tags, favorites, search, and sorting for organizing tunnel configurations.
 - Supports per-tunnel automatic reconnection with network and sleep recovery.
@@ -95,6 +96,7 @@ swift test
 - [Release process](docs/release.en.md)
 - [Automatic reconnection validation](docs/validation-auto-reconnect.md)
 - [Connection notification and diagnostics validation](docs/validation-connection-notifications.md)
+- [SSH Config read-only import validation](docs/validation-ssh-config-import.md)
 - [Changelog](CHANGELOG.en.md)
 - [Contributing](CONTRIBUTING.en.md)
 - [Code of Conduct](CODE_OF_CONDUCT.md)
@@ -244,7 +246,7 @@ Keep the SOCKS bind address at `127.0.0.1` unless LAN access is intentional. The
 
 ### SSH Config
 
-Use this when the forwarding rule already lives in `~/.ssh/config`. The app only stores the SSH config alias and does not edit your SSH config file.
+Use this when `LocalForward`, `RemoteForward`, or `DynamicForward` rules already live in `~/.ssh/config`. The app stores only the SSH Config alias; it does not copy forwarding directives or edit SSH configuration files.
 
 ```sshconfig
 Host example-service
@@ -260,6 +262,14 @@ SSH Config: example-service
 Open URL: http://127.0.0.1:18080
 ```
 
+You can also choose “Import SSH Config” from the bottom of the panel:
+
+1. The app reads `~/.ssh/config` and accessible `Include` files without modifying them, then lists explicit Host aliases without wildcards. Enter a concrete alias manually for wildcard Host patterns.
+2. Select aliases and choose “Preview Selected”. The app runs the fixed `/usr/bin/ssh -G <Host>` command and displays forwarding types and listener exposure.
+3. If static scanning finds `Match exec`, the app warns before the first preview because `ssh -G` may run its command. Canceling does not invoke `ssh -G`.
+4. Existing aliases are not selected again, and only previews containing a forwarding directive can be imported.
+5. Importing adds references without connecting and never modifies SSH configuration files.
+
 The app starts SSH with:
 
 ```bash
@@ -269,9 +279,9 @@ The app starts SSH with:
   sshConfigName
 ```
 
-SSH Config mode requires the selected `Host` to contain at least one `LocalForward`.
+SSH Config mode requires the selected `Host` to contain at least one `LocalForward`, `RemoteForward`, or `DynamicForward`.
 
-The app also checks the resolved `LocalForward` bind address and asks for confirmation when it is not a loopback address.
+The app checks resolved listeners and asks for confirmation when a local, remote, or dynamic listener may be exposed beyond loopback.
 
 ## Safety Boundary
 

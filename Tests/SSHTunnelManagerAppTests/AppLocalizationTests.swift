@@ -26,6 +26,12 @@ import Testing
     #expect(AppStrings.searchTunnels(language: "zh-Hans") == "搜索隧道")
     #expect(AppStrings.sortManual(language: "en") == "Manual")
     #expect(AppStrings.sortManual(language: "zh-Hans") == "手工排序")
+    #expect(AppStrings.importSSHConfig(language: "en") == "Import SSH Config")
+    #expect(AppStrings.importSSHConfig(language: "zh-Hans") == "导入 SSH Config")
+    #expect(AppStrings.importSelectionCount(2, language: "en") == "2 selected")
+    #expect(AppStrings.importSelectionCount(2, language: "zh-Hans") == "已选 2 项")
+    #expect(AppStrings.importManualAlias(language: "zh-Hans") == "通配 Host 的具体别名（可选）")
+    #expect(AppStrings.importManualAliasHelp(language: "en").contains("does not modify SSH Config"))
 }
 
 @Test func notificationAndDiagnosticCopyLocalizesToEnglishAndChinese() {
@@ -112,4 +118,5 @@ import Testing
     #expect(englishKeys.contains("delete.confirmation.message"))
     #expect(englishKeys.contains("filter.search"))
     #expect(englishKeys.contains("sort.manual"))
+    #expect(englishKeys.contains("import.matchExec.message"))
 }

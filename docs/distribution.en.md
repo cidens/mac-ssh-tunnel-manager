@@ -104,7 +104,7 @@ The app supports four modes:
 - Local Forward: generates `ssh -N -L localHost:localPort:remoteHost:remotePort sshHost`.
 - Remote Forward: generates `ssh -N -R remoteHost:remotePort:localHost:localPort sshHost`; non-loopback remote listeners require confirmation, and the effective bind depends on the server's `GatewayPorts` setting.
 - Dynamic SOCKS: generates `ssh -N -D localHost:localPort sshHost`, useful for one-off SOCKS proxy use by Git, curl, browsers, or similar tools.
-- SSH Config: passes only `sshConfigName`; the user's own `~/.ssh/config` provides `LocalForward`.
+- SSH Config: passes only `sshConfigName`; the user's own `~/.ssh/config` provides `LocalForward`, `RemoteForward`, or `DynamicForward`, and read-only import stores only the Host reference.
 
 Examples use sanitized values such as `example-bastion`, `example-service`, and `203.0.113.10`. Do not publish real Host aliases, private IPs, usernames, or private-key paths in public documentation or release notes.
 
