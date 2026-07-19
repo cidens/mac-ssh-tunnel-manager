@@ -96,7 +96,6 @@ final class TunnelManager: ObservableObject {
     private let configurationTransfer = TunnelConfigurationTransfer()
     private var refreshTimer: Timer?
     private var statusRefreshTask: Task<Void, Never>?
-    private var lastAutomaticStatusRefreshAt = Date.distantPast
     private var willTerminateObserver: NSObjectProtocol?
     private var pendingRiskOperation: (() -> Void)?
     private let recoveryMonitor: SystemRecoveryMonitor
@@ -128,11 +127,6 @@ final class TunnelManager: ObservableObject {
         }
 
         refreshStatuses()
-        refreshTimer = Timer.scheduledTimer(withTimeInterval: Self.activeStatusRefreshInterval, repeats: true) { [weak self] _ in
-            Task { @MainActor in
-                self?.refreshStatuses(force: false)
-            }
-        }
         willTerminateObserver = NotificationCenter.default.addObserver(
             forName: NSApplication.willTerminateNotification,
             object: nil,
@@ -1131,19 +1125,13 @@ final class TunnelManager: ObservableObject {
         return true
     }
 
-    func refreshStatuses(force: Bool = true) {
-        let now = Date()
-        if !force,
-           !tunnels.contains(where: { Self.shouldCheckLocalPort(for: $0) && isRunRequested(for: $0) }),
-           now.timeIntervalSince(lastAutomaticStatusRefreshAt) < Self.idleStatusRefreshInterval {
-            return
-        }
-        lastAutomaticStatusRefreshAt = now
-
+    func refreshStatuses() {
+        scheduleNextAutomaticStatusRefresh()
         for tunnel in tunnels {
-            var runtime = runtimes[tunnel.id] ?? TunnelRuntimeState()
-            if !Self.shouldCheckLocalPort(for: tunnel) {
-                runtime.isPortListening = false
+            guard !Self.shouldCheckLocalPort(for: tunnel),
+                  var runtime = runtimes[tunnel.id],
+                  Self.updatePortListening(false, in: &runtime) else {
+                continue
             }
             runtimes[tunnel.id] = runtime
         }
@@ -1182,10 +1170,49 @@ final class TunnelManager: ObservableObject {
                 let tunnelEndpoints = Self.localListenerEndpoints(for: tunnel)
                 let isListening = !tunnelEndpoints.isEmpty && tunnelEndpoints.allSatisfy { results[$0] == true }
                 var runtime = self.runtimes[tunnel.id] ?? TunnelRuntimeState()
-                runtime.isPortListening = isListening
-                self.runtimes[tunnel.id] = runtime
+                if Self.updatePortListening(isListening, in: &runtime) {
+                    self.runtimes[tunnel.id] = runtime
+                }
+            }
+            self.scheduleNextAutomaticStatusRefresh()
+        }
+    }
+
+    private func scheduleNextAutomaticStatusRefresh() {
+        refreshTimer?.invalidate()
+        let requiresFastRefresh = tunnels.contains { tunnel in
+            Self.requiresFastStatusRefresh(
+                for: tunnel,
+                runtime: runtimes[tunnel.id] ?? TunnelRuntimeState()
+            )
+        }
+        let interval = requiresFastRefresh
+            ? Self.activeStatusRefreshInterval
+            : Self.stableStatusRefreshInterval
+        refreshTimer = Timer.scheduledTimer(withTimeInterval: interval, repeats: false) { [weak self] _ in
+            Task { @MainActor in
+                self?.refreshStatuses()
             }
         }
+    }
+
+    static func requiresFastStatusRefresh(
+        for tunnel: TunnelConfig,
+        runtime: TunnelRuntimeState
+    ) -> Bool {
+        shouldCheckLocalPort(for: tunnel)
+            && runtime.recovery.wantsToRun
+            && !runtime.isPortListening
+    }
+
+    @discardableResult
+    static func updatePortListening(
+        _ isListening: Bool,
+        in runtime: inout TunnelRuntimeState
+    ) -> Bool {
+        guard runtime.isPortListening != isListening else { return false }
+        runtime.isPortListening = isListening
+        return true
     }
 
     private func save() throws {
@@ -1385,7 +1412,7 @@ final class TunnelManager: ObservableObject {
 
     private static let sshConfigValidationTimeoutSeconds = 10
     private static let activeStatusRefreshInterval: TimeInterval = 2
-    private static let idleStatusRefreshInterval: TimeInterval = 30
+    private static let stableStatusRefreshInterval: TimeInterval = 30
 
     private func validateRiskyBind(_ tunnel: TunnelConfig, allowRiskyBind: Bool) throws {
         guard !allowRiskyBind else { return }

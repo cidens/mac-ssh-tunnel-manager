@@ -236,7 +236,7 @@ The app only manages SSH processes that it starts. It does not search for or ter
 
 Remote Forward rules and SSH Config references do not use local port probes, so a running process displays as `Running`. If SSH exits because forwarding failed, stderr is shown on the tunnel card.
 
-Each local-listener refresh runs one fixed `/usr/sbin/lsof -nP -iTCP -sTCP:LISTEN` process and reuses that snapshot for every Local and SOCKS endpoint, so rule count does not multiply subprocesses. Local listeners with active run intent are checked every two seconds; when all tunnels are stopped, external port occupancy is checked every 30 seconds. Start, stop, save, import, and manual refresh still trigger an immediate check, and only one background probe can be active at a time.
+Each local-listener refresh runs one fixed `/usr/sbin/lsof -nP -iTCP -sTCP:LISTEN` process and reuses that snapshot for every Local and SOCKS endpoint, so rule count does not multiply subprocesses. A run-requested listener that has not yet been confirmed is checked every two seconds; confirmed stable listeners and fully stopped configurations are checked every 30 seconds. Start, stop, save, import, and manual refresh still trigger an immediate check, and only one background probe can be active at a time. Results equal to the current runtime state are not written back to `@Published runtimes`, avoiding redundant SwiftUI recomputation and layout.
 
 ## Process Cleanup
 

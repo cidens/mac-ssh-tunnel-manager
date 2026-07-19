@@ -12,6 +12,36 @@ import SSHTunnelCore
 }
 
 @MainActor
+@Test func statusRefreshIsFastOnlyUntilARunRequestedLocalListenerIsConfirmed() {
+    let tunnel = TunnelConfig(
+        name: "Example",
+        sshHost: "example-host",
+        localHost: "127.0.0.1",
+        localPort: 18_080,
+        remoteHost: "localhost",
+        remotePort: 8_080,
+        openURL: nil
+    )
+    var runtime = TunnelRuntimeState()
+
+    #expect(!TunnelManager.requiresFastStatusRefresh(for: tunnel, runtime: runtime))
+    _ = runtime.recovery.requestStart()
+    #expect(TunnelManager.requiresFastStatusRefresh(for: tunnel, runtime: runtime))
+    runtime.isPortListening = true
+    #expect(!TunnelManager.requiresFastStatusRefresh(for: tunnel, runtime: runtime))
+}
+
+@MainActor
+@Test func unchangedPortListeningStateDoesNotRequestAPublishedRuntimeUpdate() {
+    var runtime = TunnelRuntimeState()
+
+    #expect(!TunnelManager.updatePortListening(false, in: &runtime))
+    #expect(TunnelManager.updatePortListening(true, in: &runtime))
+    #expect(runtime.isPortListening)
+    #expect(!TunnelManager.updatePortListening(true, in: &runtime))
+}
+
+@MainActor
 @Test func addDynamicForwardRejectsHostWithForwardingDirectivesFromInjectedResolver() throws {
     let directory = try temporaryDirectory()
     let resolver = StubSSHConfigResolver(results: [
