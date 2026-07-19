@@ -4,7 +4,7 @@
 
 用于管理 SSH 本地端口转发、远程端口转发和动态 SOCKS 隧道的 macOS 菜单栏应用。
 
-当前版本：`0.3.2`
+当前版本：`0.4.0`
 
 应用名称为 `SSH Tunnel Manager`，SwiftPM executable target 为 `ssh-tunnel-manager`。
 
@@ -16,6 +16,7 @@
 - 复用系统已有的 `~/.ssh/config`、ssh-agent 和 macOS Keychain 行为。
 - 可只读发现 `~/.ssh/config` 及可访问的 `Include` 文件中的明确 Host 别名，预览后批量导入引用。
 - 支持按全部或所选范围导出 JSON 配置，并通过预览、冲突策略和导入前备份安全导入。
+- 同一个 SSH Host 可在一个连接组中混合承载多条本地、远程和动态 SOCKS 转发，统一启动、停止、重连和自动连接。
 - 隧道配置以 JSON 保存在本机。
 - 支持通过标签、收藏、搜索和排序快速定位隧道配置。
 - 支持为单条隧道启用自动重连，并在断网或睡眠恢复后按退避策略恢复。
@@ -35,7 +36,7 @@
 
 - macOS 14 或更高版本。
 - Xcode 26 或兼容的 Swift 6 工具链。
-- 如果要使用 SSH Config 模式，需要先在 `~/.ssh/config` 中配置对应 SSH Host。
+- 如果要使用 SSH Config 引用，需要先在 `~/.ssh/config` 中配置对应 SSH Host。
 
 ## 运行
 
@@ -88,7 +89,7 @@ open -a 'SSH Tunnel Manager'
 产物会输出到：
 
 ```text
-dist/SSH Tunnel Manager-0.3.2.zip
+dist/SSH Tunnel Manager-0.4.0.zip
 ```
 
 对方解压后，把 `SSH Tunnel Manager.app` 拖到 `/Applications`，再从 Finder、Spotlight 或 Launchpad 打开。
@@ -113,6 +114,7 @@ swift test
 - [SSH Config 只读导入验收记录](docs/validation-ssh-config-import.md)
 - [JSON 配置导入导出验收记录](docs/validation-json-import-export.md)
 - [登录项与逐连接自动启动验收记录](docs/validation-login-auto-start.md)
+- [连接组与多规则转发验收记录](docs/validation-connection-groups.md)
 - [分发说明](docs/distribution.md)
 - [隐私说明](docs/privacy.md)
 - [排障手册](docs/troubleshooting.md)
@@ -143,17 +145,11 @@ swift test
 ~/Library/Application Support/ssh-tunnel-manager/connection-notifications.json
 ```
 
-每条隧道保存以下字段：
+每个连接组保存以下组级字段：
 
 - `name`
-- `mode`
 - `sshHost`
-- `localHost`
-- `localPort`
-- `remoteHost`
-- `remotePort`
 - `sshConfigName`
-- `openURL`
 - `tags`：最多 10 个标签，每个标签最多 32 个字符，按大小写不敏感方式去重。
 - `isFavorite`：收藏状态。
 - `manualOrder`：稳定的手工排序序号。
@@ -161,7 +157,13 @@ swift test
 - `isAutoReconnectEnabled`：是否在可恢复故障后自动重连；旧版 JSON 缺少该字段时默认为 `false`。
 - `isAutoStartEnabled`：是否在应用启动后自动连接；旧版 JSON 缺少该字段时默认为 `false`。
 
+应用内连接组使用 `rules` 保存转发规则。每条规则独立包含 `id`、`mode`、监听地址和端口、目标地址和端口、`openURL`、`isEnabled` 及与监听模式、地址、端口绑定的风险确认签名。组内已启用规则通过同一个 `/usr/bin/ssh -N` 进程生成多组 `-L`、`-R` 和 `-D` 参数；全部规则停用时可以保存，但不能启动。新建时先选择连接组或 SSH Config 引用，保存后不能在编辑页直接互转。SSH Config 引用继续保持只读，不转换为应用内规则。
+
+新增和编辑在独立 Sheet 中完成，不会在主列表卡片内展开长表单。连接组一次只展开一条规则的完整字段，其余规则显示模式与端点摘要；标题、取消和保存操作保持可见。新增规则会在编辑器内部定位，取消未保存修改前会要求确认，保存失败会保留当前草稿并显示错误。
+
 旧版 JSON 不包含上述组织字段、自动重连或自动连接字段时使用兼容默认值，并以原 JSON 数组顺序作为初始手工顺序。
+
+旧版单端口配置在读取时自动转换为只含一条规则的连接组。首次把迁移后的结构写回磁盘前，应用原样创建 `tunnels.json.pre-connection-groups.bak`，迁移写入失败时不覆盖旧文件，内存配置也恢复到写入前状态。
 
 首次保存远程转发配置前，如果已经存在旧版 `tunnels.json`，应用会原样创建一次性恢复备份：
 
@@ -174,13 +176,13 @@ swift test
 面板底部“导入”菜单中的“配置导入导出”支持：
 
 - 导出全部或逐条选择的配置为 UTF-8 JSON，包含格式版本、导出时间、应用版本和配置数组。
-- 导出标签、收藏、手工顺序及自动化设置，不导出 SSH 进程、错误历史、原始 stderr、凭据或临时风险确认。
+- 导出连接组、规则、标签、收藏、手工顺序及自动化设置，不导出 SSH 进程、错误历史、原始 stderr 或凭据。
 - 导入前在内存中检查格式版本、文件大小、配置数量、字段、端口、URL、重复 ID、本地监听冲突和可能暴露的监听地址。
 - 相同 ID 默认跳过，也可选择替换或作为副本导入；副本会生成新的 ID。
 - 所有导入项强制关闭“应用启动时连接”，并清除最近使用时间；预览和导入不会启动 SSH、打开 URL 或请求登录项、通知权限。
 - 提交前把当前配置备份为 `tunnels.json.pre-import.bak`，再原子写入；保存失败时恢复文件和界面内存。导入时如果仍有运行或等待重连的隧道，会要求先停止。
 
-高版本格式不会降级猜测：当 `schemaVersion` 大于当前支持的 `1` 时，应用拒绝导入且不写入任何配置。导出的文件可能含真实 Host、地址、端口、名称和标签，请按敏感配置文件保管。
+当前导出格式为 `schemaVersion = 2`。导入端继续读取 `schemaVersion = 1` 的单端口配置并转换为单规则连接组；导入时会清除所有规则的风险确认和自动启动设置。高于当前支持版本的格式不会降级猜测，应用会拒绝导入且不写入任何配置。导出的文件可能含真实 Host、地址、端口、名称和标签，请按敏感配置文件保管。
 
 ## 配置查找与排序
 
@@ -192,6 +194,8 @@ swift test
 - 在未启用搜索、标签或收藏筛选时，通过上下箭头调整手工顺序。
 
 筛选和排序只改变展示结果，不会启动、停止、编辑或删除被隐藏的隧道。手工顺序、标签、收藏和最近使用时间都会随配置保存；写盘失败时界面恢复为修改前状态并显示错误。
+
+隧道名称用于在主列表和提示中识别配置，保存时按去除首尾空白、大小写不敏感方式保持唯一。新增、编辑、SSH Config 批量导入和 JSON 导入都不会产生重名；JSON“作为副本”会按需生成 `名称 (2)`、`名称 (3)`。
 
 ## 自动重连
 
@@ -336,7 +340,7 @@ SSH Config：example-service
   sshHost
 ```
 
-SSH Config 模式下，应用直接使用 `~/.ssh/config` 中已有 Host：
+SSH Config 引用直接使用 `~/.ssh/config` 中已有 Host：
 
 ```bash
 /usr/bin/ssh -N \

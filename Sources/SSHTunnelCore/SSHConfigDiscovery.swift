@@ -19,6 +19,7 @@ public enum SSHConfigDiscoveryIssueKind: String, Equatable, Sendable {
     case invalidSyntax
     case includeCycle
     case traversalLimitReached
+    case fileTooLarge
 }
 
 public struct SSHConfigDiscoveryIssue: Equatable, Sendable {
@@ -54,24 +55,28 @@ public struct SSHConfigDiscovery: Sendable {
     public let includeBaseURL: URL
     public let maximumDepth: Int
     public let maximumFileCount: Int
+    public let maximumFileSize: Int
 
     public init(
         configURL: URL,
         includeBaseURL: URL? = nil,
         maximumDepth: Int = 32,
-        maximumFileCount: Int = 256
+        maximumFileCount: Int = 256,
+        maximumFileSize: Int = 1_048_576
     ) {
         self.configURL = configURL
         self.includeBaseURL = includeBaseURL ?? configURL.deletingLastPathComponent()
         self.maximumDepth = maximumDepth
         self.maximumFileCount = maximumFileCount
+        self.maximumFileSize = maximumFileSize
     }
 
     public func discover() -> SSHConfigDiscoveryResult {
         var scanner = Scanner(
             includeBaseURL: includeBaseURL,
             maximumDepth: maximumDepth,
-            maximumFileCount: maximumFileCount
+            maximumFileCount: maximumFileCount,
+            maximumFileSize: maximumFileSize
         )
         scanner.scan(configURL, depth: 0)
         return scanner.result
@@ -83,6 +88,7 @@ private extension SSHConfigDiscovery {
         let includeBaseURL: URL
         let maximumDepth: Int
         let maximumFileCount: Int
+        let maximumFileSize: Int
         var hosts: [SSHConfigDiscoveredHost] = []
         var issues: [SSHConfigDiscoveryIssue] = []
         var containsMatchExec = false
@@ -114,9 +120,18 @@ private extension SSHConfigDiscovery {
 
             let data: Data
             do {
+                let values = try url.resourceValues(forKeys: [.fileSizeKey])
+                if let fileSize = values.fileSize, fileSize > maximumFileSize {
+                    appendIssueOnce(.fileTooLarge, path: path)
+                    return
+                }
                 data = try Data(contentsOf: url)
             } catch {
                 appendIssueOnce(.unreadableFile, path: path)
+                return
+            }
+            guard data.count <= maximumFileSize else {
+                appendIssueOnce(.fileTooLarge, path: path)
                 return
             }
             guard let text = String(data: data, encoding: .utf8) else {

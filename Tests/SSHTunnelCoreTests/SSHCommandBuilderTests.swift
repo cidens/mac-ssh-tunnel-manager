@@ -25,6 +25,107 @@ import Testing
     ])
 }
 
+@Test func buildsOneSSHCommandForMixedEnabledForwardingRules() throws {
+    var tunnel = TunnelConfig(
+        name: "Mixed group",
+        sshHost: "example-prod",
+        localHost: "127.0.0.1",
+        localPort: 8_088,
+        remoteHost: "db",
+        remotePort: 5_432,
+        openURL: nil
+    )
+    tunnel.replaceRules([
+        TunnelForwardRule(mode: .localForward, localHost: "127.0.0.1", localPort: 8_088, remoteHost: "db", remotePort: 5_432),
+        TunnelForwardRule(mode: .remoteForward, localHost: "127.0.0.1", localPort: 3_000, remoteHost: "localhost", remotePort: 18_080),
+        TunnelForwardRule(mode: .dynamicForward, localHost: "[::1]", localPort: 1_080),
+        TunnelForwardRule(mode: .localForward, localHost: "127.0.0.1", localPort: 9_999, remoteHost: "disabled", remotePort: 9_999, isEnabled: false),
+    ])
+
+    let builder = SSHCommandBuilder()
+    try builder.validate(tunnel)
+    let command = builder.buildStartCommand(for: tunnel)
+
+    #expect(command.arguments == [
+        "-N", "-o", "ExitOnForwardFailure=yes", "-o", "ServerAliveInterval=30",
+        "-L", "127.0.0.1:8088:db:5432",
+        "-R", "localhost:18080:127.0.0.1:3000",
+        "-D", "[::1]:1080",
+        "example-prod",
+    ])
+    #expect(!command.arguments.contains(where: { $0.contains("disabled") }))
+}
+
+@Test func allowsSavingButRejectsStartingAGroupWithEveryRuleDisabled() throws {
+    var tunnel = TunnelConfig(
+        name: "Paused group",
+        sshHost: "example-prod",
+        localHost: "127.0.0.1",
+        localPort: 8_088,
+        remoteHost: "db",
+        remotePort: 5_432,
+        openURL: nil
+    )
+    tunnel.replaceRules(tunnel.effectiveRules.map { rule in
+        var disabled = rule
+        disabled.isEnabled = false
+        return disabled
+    })
+
+    let builder = SSHCommandBuilder()
+    try builder.validate(tunnel)
+    #expect(throws: TunnelValidationError.noEnabledRules) {
+        try builder.validateForStart(tunnel)
+    }
+}
+
+@Test func rejectsAConnectionGroupWithoutForwardingRules() {
+    var tunnel = TunnelConfig(
+        name: "Empty group",
+        sshHost: "example-prod",
+        localHost: "127.0.0.1",
+        localPort: 8_088,
+        remoteHost: "db",
+        remotePort: 5_432,
+        openURL: nil
+    )
+    tunnel.replaceRules([])
+
+    #expect(throws: TunnelValidationError.self) {
+        try SSHCommandBuilder().validate(tunnel)
+    }
+}
+
+@Test func rejectsInjectedHostInAnyConnectionGroupRule() {
+    var tunnel = TunnelConfig(
+        name: "Mixed group", sshHost: "example-prod", localHost: "127.0.0.1", localPort: 8_088,
+        remoteHost: "db", remotePort: 5_432, openURL: nil
+    )
+    tunnel.replaceRules([
+        tunnel.rules[0],
+        TunnelForwardRule(mode: .localForward, localHost: "127.0.0.1", localPort: 9_000, remoteHost: "db;touch", remotePort: 9_001),
+    ])
+
+    #expect(throws: TunnelValidationError.self) {
+        try SSHCommandBuilder().validate(tunnel)
+    }
+}
+
+@Test func riskConfirmationIsBoundToRuleModeAddressAndPort() {
+    var rule = TunnelForwardRule(
+        mode: .localForward,
+        localHost: "*",
+        localPort: 8_088,
+        remoteHost: "db",
+        remotePort: 5_432
+    )
+    rule.riskConfirmationSignature = rule.currentRiskSignature
+    #expect(rule.hasValidRiskConfirmation)
+
+    rule.localPort = 8_089
+    #expect(!rule.hasValidRiskConfirmation)
+}
+
 @Test func buildsSSHConfigArgumentsWithoutLocalForwardFlag() throws {
     let tunnel = TunnelConfig(
         name: "Example via config",

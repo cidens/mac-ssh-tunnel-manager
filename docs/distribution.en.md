@@ -28,7 +28,7 @@ The script:
 Example output:
 
 ```text
-dist/SSH Tunnel Manager-0.3.2.zip
+dist/SSH Tunnel Manager-0.4.0.zip
 ```
 
 `dist/` is a build output directory and should not be committed to Git.
@@ -37,7 +37,7 @@ dist/SSH Tunnel Manager-0.3.2.zip
 
 After receiving the zip package, users install it like this:
 
-1. Unzip `SSH Tunnel Manager-0.3.2.zip`.
+1. Unzip `SSH Tunnel Manager-0.4.0.zip`.
 2. Drag `SSH Tunnel Manager.app` to `/Applications`.
 3. Open the app from Finder, Spotlight, or Launchpad.
 4. Add tunnel definitions based on their own `~/.ssh/config`.
@@ -99,13 +99,16 @@ Replacing the app bundle does not delete existing tunnel definitions.
 
 ## Tunnel Configuration Notes
 
-The app supports four modes:
+An app-managed connection group can combine the following rules under one SSH Host and one SSH process:
 
 - Local Forward: generates `ssh -N -L localHost:localPort:remoteHost:remotePort sshHost`.
 - Remote Forward: generates `ssh -N -R remoteHost:remotePort:localHost:localPort sshHost`; non-loopback remote listeners require confirmation, and the effective bind depends on the server's `GatewayPorts` setting.
 - Dynamic SOCKS: generates `ssh -N -D localHost:localPort sshHost`, useful for one-off SOCKS proxy use by Git, curl, browsers, or similar tools.
-- SSH Config: passes only `sshConfigName`; the user's own `~/.ssh/config` provides `LocalForward`, `RemoteForward`, or `DynamicForward`, and read-only import stores only the Host reference.
+
+SSH Config remains a separate read-only reference mode. It passes only `sshConfigName`; the user's own file provides forwarding directives, and the app does not convert them into editable group rules.
 
 Examples use sanitized values such as `example-bastion`, `example-service`, and `203.0.113.10`. Do not publish real Host aliases, private IPs, usernames, or private-key paths in public documentation or release notes.
 
 Before the first Remote Forward configuration is saved, the app backs up an existing `tunnels.json` as `tunnels.json.pre-remote-forward.bak`. Quit the app before replacing `tunnels.json` with this backup for downgrade recovery.
+
+Before a released single-forward file is first written in the connection-group format, the app creates `tunnels.json.pre-connection-groups.bak`. Quit the app before using that byte-for-byte backup for downgrade recovery.

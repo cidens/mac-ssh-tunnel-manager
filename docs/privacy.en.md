@@ -25,6 +25,8 @@ Connection-notification settings are stored in `connection-notifications.json` i
 
 Before the first Remote Forward configuration is saved, the app may create `tunnels.json.pre-remote-forward.bak` in the same directory. It is a local recovery copy containing the same categories of information as `tunnels.json` and is not uploaded.
 
+Before the first connection-group migration write, the app creates `tunnels.json.pre-connection-groups.bak` with the original configuration bytes. User-created exports may contain connection names, hosts, rule addresses and ports, URLs, tags, organization and automation settings, and listener-bound risk-confirmation signatures. Imports clear those confirmations. The app does not upload, synchronize, or encrypt exports or backups.
+
 The app does not store:
 
 - SSH passwords.

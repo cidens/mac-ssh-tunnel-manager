@@ -7,9 +7,65 @@ public enum TunnelMode: String, Codable, Equatable, Sendable {
     case sshConfig
 }
 
+public struct TunnelForwardRule: Codable, Equatable, Identifiable, Sendable {
+    public var id: UUID
+    public var mode: TunnelMode
+    public var localHost: String
+    public var localPort: Int
+    public var remoteHost: String
+    public var remotePort: Int
+    public var openURL: URL?
+    public var isEnabled: Bool
+    public var riskConfirmationSignature: String?
+
+    public init(
+        id: UUID = UUID(),
+        mode: TunnelMode,
+        localHost: String,
+        localPort: Int,
+        remoteHost: String = "",
+        remotePort: Int = 0,
+        openURL: URL? = nil,
+        isEnabled: Bool = true,
+        riskConfirmationSignature: String? = nil
+    ) {
+        self.id = id
+        self.mode = mode
+        self.localHost = localHost
+        self.localPort = localPort
+        self.remoteHost = remoteHost
+        self.remotePort = remotePort
+        self.openURL = openURL
+        self.isEnabled = isEnabled
+        self.riskConfirmationSignature = riskConfirmationSignature
+    }
+
+    public var currentRiskSignature: String {
+        "\(mode.rawValue)|\(listenerHost.lowercased())|\(listenerPort)"
+    }
+
+    public var hasValidRiskConfirmation: Bool {
+        riskConfirmationSignature == currentRiskSignature
+    }
+
+    public var listenerHost: String {
+        mode == .remoteForward ? remoteHost : localHost
+    }
+
+    public var listenerPort: Int {
+        mode == .remoteForward ? remotePort : localPort
+    }
+}
+
 public struct TunnelConfig: Codable, Equatable, Identifiable, Sendable {
     public static let maximumTagCount = 10
     public static let maximumTagLength = 32
+
+    public static func nameComparisonKey(_ name: String) -> String {
+        name.trimmingCharacters(in: .whitespacesAndNewlines)
+            .folding(options: [.caseInsensitive, .diacriticInsensitive], locale: nil)
+    }
+    public static let maximumRuleCount = 20
 
     public var id: UUID
     public var mode: TunnelMode
@@ -27,6 +83,31 @@ public struct TunnelConfig: Codable, Equatable, Identifiable, Sendable {
     public var lastUsedAt: Date?
     public var isAutoReconnectEnabled: Bool
     public var isAutoStartEnabled: Bool
+    public var rules: [TunnelForwardRule]
+
+    public var effectiveRules: [TunnelForwardRule] {
+        guard mode != .sshConfig, rules.count == 1, var rule = rules.first else {
+            return rules
+        }
+        rule.mode = mode
+        rule.localHost = localHost
+        rule.localPort = localPort
+        rule.remoteHost = remoteHost
+        rule.remotePort = remotePort
+        rule.openURL = openURL
+        return [rule]
+    }
+
+    public mutating func replaceRules(_ newRules: [TunnelForwardRule]) {
+        rules = newRules
+        guard mode != .sshConfig, let primary = newRules.first else { return }
+        mode = primary.mode
+        localHost = primary.localHost
+        localPort = primary.localPort
+        remoteHost = primary.remoteHost
+        remotePort = primary.remotePort
+        openURL = primary.openURL
+    }
 
     public init(
         id: UUID = UUID(),
@@ -54,6 +135,14 @@ public struct TunnelConfig: Codable, Equatable, Identifiable, Sendable {
         self.lastUsedAt = nil
         self.isAutoReconnectEnabled = false
         self.isAutoStartEnabled = false
+        self.rules = [TunnelForwardRule(
+            mode: .localForward,
+            localHost: localHost,
+            localPort: localPort,
+            remoteHost: remoteHost,
+            remotePort: remotePort,
+            openURL: openURL
+        )]
     }
 
     public init(
@@ -82,6 +171,14 @@ public struct TunnelConfig: Codable, Equatable, Identifiable, Sendable {
         self.lastUsedAt = nil
         self.isAutoReconnectEnabled = false
         self.isAutoStartEnabled = false
+        self.rules = [TunnelForwardRule(
+            mode: .remoteForward,
+            localHost: localTargetHost,
+            localPort: localPort,
+            remoteHost: remoteBindHost,
+            remotePort: remotePort,
+            openURL: openURL
+        )]
     }
 
     public init(
@@ -108,6 +205,12 @@ public struct TunnelConfig: Codable, Equatable, Identifiable, Sendable {
         self.lastUsedAt = nil
         self.isAutoReconnectEnabled = false
         self.isAutoStartEnabled = false
+        self.rules = [TunnelForwardRule(
+            mode: .dynamicForward,
+            localHost: localHost,
+            localPort: localPort,
+            openURL: openURL
+        )]
     }
 
     public init(
@@ -132,6 +235,7 @@ public struct TunnelConfig: Codable, Equatable, Identifiable, Sendable {
         self.lastUsedAt = nil
         self.isAutoReconnectEnabled = false
         self.isAutoStartEnabled = false
+        self.rules = []
     }
 
     private enum CodingKeys: String, CodingKey {
@@ -151,6 +255,7 @@ public struct TunnelConfig: Codable, Equatable, Identifiable, Sendable {
         case lastUsedAt
         case isAutoReconnectEnabled
         case isAutoStartEnabled
+        case rules
     }
 
     public init(from decoder: Decoder) throws {
@@ -166,6 +271,35 @@ public struct TunnelConfig: Codable, Equatable, Identifiable, Sendable {
         isAutoReconnectEnabled = try container.decodeIfPresent(Bool.self, forKey: .isAutoReconnectEnabled) ?? false
         isAutoStartEnabled = try container.decodeIfPresent(Bool.self, forKey: .isAutoStartEnabled) ?? false
 
+        if let decodedRules = try container.decodeIfPresent([TunnelForwardRule].self, forKey: .rules) {
+            rules = decodedRules
+            if mode != .sshConfig, let primary = decodedRules.first {
+                sshHost = try container.decode(String.self, forKey: .sshHost)
+                mode = primary.mode
+                localHost = primary.localHost
+                localPort = primary.localPort
+                remoteHost = primary.remoteHost
+                remotePort = primary.remotePort
+                openURL = primary.openURL
+                sshConfigName = nil
+            } else if mode == .sshConfig {
+                sshHost = ""
+                localHost = ""
+                localPort = 0
+                remoteHost = ""
+                remotePort = 0
+                sshConfigName = try container.decode(String.self, forKey: .sshConfigName)
+            } else {
+                sshHost = try container.decode(String.self, forKey: .sshHost)
+                localHost = ""
+                localPort = 0
+                remoteHost = ""
+                remotePort = 0
+                sshConfigName = nil
+            }
+            return
+        }
+
         switch mode {
         case .localForward, .remoteForward:
             sshHost = try container.decode(String.self, forKey: .sshHost)
@@ -174,6 +308,15 @@ public struct TunnelConfig: Codable, Equatable, Identifiable, Sendable {
             remoteHost = try container.decode(String.self, forKey: .remoteHost)
             remotePort = try container.decode(Int.self, forKey: .remotePort)
             sshConfigName = try container.decodeIfPresent(String.self, forKey: .sshConfigName)
+            rules = [TunnelForwardRule(
+                id: id,
+                mode: mode,
+                localHost: localHost,
+                localPort: localPort,
+                remoteHost: remoteHost,
+                remotePort: remotePort,
+                openURL: openURL
+            )]
         case .dynamicForward:
             sshHost = try container.decode(String.self, forKey: .sshHost)
             localHost = try container.decode(String.self, forKey: .localHost)
@@ -181,6 +324,13 @@ public struct TunnelConfig: Codable, Equatable, Identifiable, Sendable {
             remoteHost = ""
             remotePort = 0
             sshConfigName = nil
+            rules = [TunnelForwardRule(
+                id: id,
+                mode: .dynamicForward,
+                localHost: localHost,
+                localPort: localPort,
+                openURL: openURL
+            )]
         case .sshConfig:
             sshHost = ""
             localHost = ""
@@ -188,6 +338,7 @@ public struct TunnelConfig: Codable, Equatable, Identifiable, Sendable {
             remoteHost = ""
             remotePort = 0
             sshConfigName = try container.decode(String.self, forKey: .sshConfigName)
+            rules = []
         }
     }
 
@@ -196,7 +347,6 @@ public struct TunnelConfig: Codable, Equatable, Identifiable, Sendable {
         try container.encode(id, forKey: .id)
         try container.encode(mode, forKey: .mode)
         try container.encode(name, forKey: .name)
-        try container.encodeIfPresent(openURL, forKey: .openURL)
         try container.encode(tags, forKey: .tags)
         try container.encode(isFavorite, forKey: .isFavorite)
         try container.encodeIfPresent(manualOrder, forKey: .manualOrder)
@@ -205,18 +355,12 @@ public struct TunnelConfig: Codable, Equatable, Identifiable, Sendable {
         try container.encode(isAutoStartEnabled, forKey: .isAutoStartEnabled)
 
         switch mode {
-        case .localForward, .remoteForward:
+        case .localForward, .remoteForward, .dynamicForward:
             try container.encode(sshHost, forKey: .sshHost)
-            try container.encode(localHost, forKey: .localHost)
-            try container.encode(localPort, forKey: .localPort)
-            try container.encode(remoteHost, forKey: .remoteHost)
-            try container.encode(remotePort, forKey: .remotePort)
-        case .dynamicForward:
-            try container.encode(sshHost, forKey: .sshHost)
-            try container.encode(localHost, forKey: .localHost)
-            try container.encode(localPort, forKey: .localPort)
+            try container.encode(effectiveRules, forKey: .rules)
         case .sshConfig:
             try container.encode(sshConfigName, forKey: .sshConfigName)
+            try container.encodeIfPresent(openURL, forKey: .openURL)
         }
     }
 
@@ -262,6 +406,8 @@ public enum TunnelValidationError: Error, Equatable, LocalizedError {
     case sshConfigMissingForwardingDirective(String)
     case sshConfigValidationTimedOut(String, Int)
     case sshHostContainsForwardingDirectives(String)
+    case invalidRule(Int, String)
+    case noEnabledRules
 
     public var errorDescription: String? {
         description()
@@ -285,6 +431,10 @@ public enum TunnelValidationError: Error, Equatable, LocalizedError {
             return CoreStrings.format("error.sshConfigValidationTimedOut", language: language, name, seconds)
         case .sshHostContainsForwardingDirectives(let name):
             return CoreStrings.format("error.sshHostContainsForwardingDirectives", language: language, name)
+        case .invalidRule(let index, let reason):
+            return CoreStrings.format("error.invalidRule", language: language, index, reason)
+        case .noEnabledRules:
+            return CoreStrings.string("error.noEnabledRules", language: language)
         }
     }
 

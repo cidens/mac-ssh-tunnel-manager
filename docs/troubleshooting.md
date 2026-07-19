@@ -119,9 +119,9 @@ ALL_PROXY=socks5h://127.0.0.1:<local-port> curl https://example.com
 
 手工填写只会增加一个待预览候选项，不会创建或修改 SSH Config。
 
-## SSH Config 模式提示缺少转发指令
+## SSH Config 引用提示缺少转发指令
 
-SSH Config 模式要求对应 Host 至少包含一条 `LocalForward`、`RemoteForward` 或 `DynamicForward`。示例：
+SSH Config 引用要求对应 Host 至少包含一条 `LocalForward`、`RemoteForward` 或 `DynamicForward`。示例：
 
 ```sshconfig
 Host example-service

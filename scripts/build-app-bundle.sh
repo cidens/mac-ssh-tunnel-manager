@@ -12,7 +12,7 @@ APP_VERSION="$(
   sed -n 's/.*public static let current = "\(.*\)".*/\1/p' \
     "${ROOT_DIR}/Sources/SSHTunnelCore/AppVersion.swift" | head -n 1
 )"
-APP_VERSION="${APP_VERSION:-0.3.2}"
+APP_VERSION="${APP_VERSION:-0.4.0}"
 
 if [[ $# -ne 1 ]]; then
   echo "Usage: $0 <output-app-path>" >&2

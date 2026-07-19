@@ -4,7 +4,7 @@ English | [中文](README.md)
 
 A lightweight macOS menu bar app for managing SSH local port forwarding, remote port forwarding, and dynamic SOCKS tunnels.
 
-Current version: `0.3.2`
+Current version: `0.4.0`
 
 The app name is `SSH Tunnel Manager`; the SwiftPM executable target remains `ssh-tunnel-manager`.
 
@@ -15,6 +15,8 @@ The app name is `SSH Tunnel Manager`; the SwiftPM executable target remains `ssh
 - Starts tunnels by calling `/usr/bin/ssh` directly, without shell command string assembly.
 - Reuses your existing `~/.ssh/config`, ssh-agent, and macOS Keychain behavior.
 - Discovers explicit Host aliases from `~/.ssh/config` and accessible `Include` files read-only, with preview and batch import.
+- Imports and exports versioned JSON configurations with preview, conflict strategies, and a recoverable pre-import backup.
+- Lets one connection group use a single SSH process for multiple mixed Local, Remote, and Dynamic SOCKS forwarding rules.
 - Stores tunnel definitions as local JSON.
 - Supports tags, favorites, search, and sorting for organizing tunnel configurations.
 - Supports per-tunnel automatic reconnection with network and sleep recovery.
@@ -34,7 +36,7 @@ The app name is `SSH Tunnel Manager`; the SwiftPM executable target remains `ssh
 
 - macOS 14 or later.
 - Xcode 26 or a compatible Swift 6 toolchain.
-- SSH Config mode requires a matching `Host` entry in your own `~/.ssh/config`.
+- An SSH Config reference requires a matching `Host` entry in your own `~/.ssh/config`.
 
 ## Run From Source
 
@@ -85,7 +87,7 @@ For small trusted distribution:
 The zip package is written to:
 
 ```text
-dist/SSH Tunnel Manager-0.3.2.zip
+dist/SSH Tunnel Manager-0.4.0.zip
 ```
 
 The generated app is ad-hoc signed and is not notarized with an Apple Developer ID. On first launch, macOS may ask the user to approve the app from Finder or from System Settings > Privacy & Security.
@@ -121,17 +123,12 @@ Tunnel definitions are stored at:
 ~/Library/Application Support/ssh-tunnel-manager/tunnels.json
 ```
 
-Each tunnel can include these fields:
+Each connection group stores group-level identity, name, SSH Host, tags, favorite and manual order, last-used time, reconnection, and connect-on-launch settings. Its `rules` array stores each forwarding mode, listener and target, URL, enabled state, and listener-bound risk-confirmation signature. All enabled rules share one `/usr/bin/ssh -N` process; a group with every rule disabled can be saved but cannot start. New configurations explicitly choose a Connection Group or SSH Config Reference, and a saved type cannot be converted in place. SSH Config references remain read-only and are not converted into app-managed rules.
 
 - `name`
-- `mode`
 - `sshHost`
-- `localHost`
-- `localPort`
-- `remoteHost`
-- `remotePort`
 - `sshConfigName`
-- `openURL`
+- `rules`: app-managed forwarding rules; each includes `id`, `mode`, endpoints, `openURL`, `isEnabled`, and `riskConfirmationSignature`.
 - `tags`: up to 10 tags, with a maximum of 32 characters each and case-insensitive deduplication.
 - `isFavorite`: whether the tunnel is marked as a favorite.
 - `manualOrder`: stable manual sort position.
@@ -141,6 +138,10 @@ Each tunnel can include these fields:
 
 Legacy JSON without organization, automatic-reconnection, or automatic-connection fields uses compatible defaults. When every configuration lacks `manualOrder`, the original JSON array order becomes the initial manual order.
 
+Legacy single-forward configurations are decoded as one-rule connection groups. Before the first migrated write, the original bytes are preserved as `tunnels.json.pre-connection-groups.bak`; failed writes keep both the old file and in-memory configuration unchanged.
+
+Configuration exports now use `schemaVersion = 2`. Imports continue to read schema v1 single-forward files and convert them to one-rule groups. Import always clears connect-on-launch and rule risk confirmations; schemas newer than v2 are rejected without writing configuration.
+
 Connection-notification settings are stored separately at:
 
 ```text
@@ -148,6 +149,8 @@ Connection-notification settings are stored separately at:
 ```
 
 The app starts with an empty tunnel list. Add tunnels from the menu bar UI.
+
+Add and Edit open in a dedicated sheet instead of expanding a long form inside a main-list card. A connection group shows the full fields for one rule at a time and compact mode and endpoint summaries for the other rules, while the title and Cancel/Save actions remain visible. New rules are revealed inside the editor, unsaved changes require confirmation before discard, and save failures preserve the draft with a visible error.
 
 Before the first Remote Forward configuration is saved, an existing `tunnels.json` is copied byte-for-byte to:
 
@@ -158,6 +161,8 @@ Before the first Remote Forward configuration is saved, an existing `tunnels.jso
 ## Configuration Organization
 
 The main panel supports combined name, tag, mode, SSH Host or SSH Config alias, and active-port search; tag and favorites filters; result counts; and manual, name, runtime-status, or last-used sorting. Filters and sorting only change presentation and never start, stop, edit, or delete hidden tunnels. Manual order, tags, favorites, and last-used time are persisted with each configuration and rolled back in memory if saving fails.
+
+Tunnel display names are unique after trimming and case-insensitive comparison. Add, Edit, SSH Config batch import, and JSON import cannot introduce duplicate names. JSON Import as Copy generates `Name (2)`, `Name (3)`, and later available suffixes.
 
 ## Automatic Reconnection
 
@@ -296,7 +301,7 @@ The app starts SSH with:
   sshConfigName
 ```
 
-SSH Config mode requires the selected `Host` to contain at least one `LocalForward`, `RemoteForward`, or `DynamicForward`.
+An SSH Config reference requires the selected `Host` to contain at least one `LocalForward`, `RemoteForward`, or `DynamicForward`.
 
 The app checks resolved listeners and asks for confirmation when a local, remote, or dynamic listener may be exposed beyond loopback.
 

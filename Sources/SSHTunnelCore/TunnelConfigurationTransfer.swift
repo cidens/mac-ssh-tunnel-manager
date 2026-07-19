@@ -1,7 +1,8 @@
 import Foundation
 
 public struct TunnelConfigurationDocument: Codable, Equatable, Sendable {
-    public static let currentSchemaVersion = 1
+    public static let currentSchemaVersion = 2
+    public static let oldestReadableSchemaVersion = 1
 
     public let schemaVersion: Int
     public let exportedAt: Date
@@ -31,12 +32,13 @@ public enum TunnelImportConflictStrategy: String, CaseIterable, Identifiable, Se
 
 public enum TunnelImportIssue: Equatable, Sendable {
     case duplicateIdentifier(UUID)
+    case duplicateName(String)
     case localEndpointConflict(host: String, port: Int)
     case exposedListener(host: String, port: Int)
 
     public var isBlocking: Bool {
         switch self {
-        case .duplicateIdentifier, .localEndpointConflict:
+        case .duplicateIdentifier, .duplicateName, .localEndpointConflict:
             return true
         case .exposedListener:
             return false
@@ -125,7 +127,8 @@ public struct TunnelConfigurationTransfer: Sendable {
         let decoder = JSONDecoder()
         decoder.dateDecodingStrategy = .iso8601
         let header = try decoder.decode(DocumentHeader.self, from: data)
-        guard header.schemaVersion == TunnelConfigurationDocument.currentSchemaVersion else {
+        guard (TunnelConfigurationDocument.oldestReadableSchemaVersion...TunnelConfigurationDocument.currentSchemaVersion)
+            .contains(header.schemaVersion) else {
             throw TunnelConfigurationTransferError.unsupportedSchemaVersion(header.schemaVersion)
         }
         let document = try decoder.decode(TunnelConfigurationDocument.self, from: data)
@@ -137,12 +140,19 @@ public struct TunnelConfigurationTransfer: Sendable {
         }
 
         var identifiers = Set<UUID>()
+        var ruleIdentifiers = Set<UUID>()
         for config in document.configs {
             guard identifiers.insert(config.id).inserted else {
                 throw TunnelConfigurationTransferError.duplicateIdentifier(config.id)
             }
             do {
                 try commandBuilder.validate(config)
+                for rule in config.effectiveRules {
+                    guard ruleIdentifiers.insert(rule.id).inserted else {
+                        throw TunnelConfigurationTransferError.duplicateIdentifier(rule.id)
+                    }
+                    try validateURL(rule.openURL)
+                }
                 try validateURL(config.openURL)
             } catch {
                 throw TunnelConfigurationTransferError.invalidConfig(
@@ -174,6 +184,11 @@ public struct TunnelConfigurationTransfer: Sendable {
             var imported = source
             imported.isAutoStartEnabled = false
             imported.lastUsedAt = nil
+            imported.replaceRules(imported.effectiveRules.map { rule in
+                var sanitized = rule
+                sanitized.riskConfirmationSignature = nil
+                return sanitized
+            })
 
             if let existingIndex = merged.firstIndex(where: { $0.id == imported.id }) {
                 switch strategy {
@@ -187,7 +202,13 @@ public struct TunnelConfigurationTransfer: Sendable {
                     replacedCount += 1
                 case .copy:
                     imported.id = UUID()
+                    imported.replaceRules(imported.effectiveRules.map { rule in
+                        var copy = rule
+                        copy.id = UUID()
+                        return copy
+                    })
                     imported.manualOrder = nextManualOrder
+                    imported.name = uniqueCopyName(for: imported.name, in: merged)
                     nextManualOrder += 1
                     merged.append(imported)
                     touchedIDs.insert(imported.id)
@@ -203,7 +224,9 @@ public struct TunnelConfigurationTransfer: Sendable {
         }
 
         normalizeManualOrder(&merged)
-        let issues = endpointIssues(in: merged, touchedIDs: touchedIDs)
+        let issues = identifierIssues(in: merged)
+            + nameIssues(in: merged, touchedIDs: touchedIDs)
+            + endpointIssues(in: merged, touchedIDs: touchedIDs)
         return TunnelImportPreview(
             sourceAppVersion: document.appVersion,
             exportedAt: document.exportedAt,
@@ -223,10 +246,50 @@ public struct TunnelConfigurationTransfer: Sendable {
         }
     }
 
+    private func identifierIssues(in configs: [TunnelConfig]) -> [TunnelImportIssue] {
+        var seen = Set<UUID>()
+        var issues: [TunnelImportIssue] = []
+        for rule in configs.flatMap(\.effectiveRules) where !seen.insert(rule.id).inserted {
+            issues.append(.duplicateIdentifier(rule.id))
+        }
+        return issues
+    }
+
+    private func nameIssues(in configs: [TunnelConfig], touchedIDs: Set<UUID>) -> [TunnelImportIssue] {
+        var issues: [TunnelImportIssue] = []
+        for (index, config) in configs.enumerated() {
+            let key = TunnelConfig.nameComparisonKey(config.name)
+            for other in configs.dropFirst(index + 1) where
+                key == TunnelConfig.nameComparisonKey(other.name)
+                    && (touchedIDs.contains(config.id) || touchedIDs.contains(other.id)) {
+                let reportedName: String
+                if touchedIDs.contains(config.id), !touchedIDs.contains(other.id) {
+                    reportedName = other.name
+                } else {
+                    reportedName = config.name
+                }
+                issues.append(.duplicateName(reportedName.trimmingCharacters(in: .whitespacesAndNewlines)))
+            }
+        }
+        return issues
+    }
+
+    private func uniqueCopyName(for name: String, in configs: [TunnelConfig]) -> String {
+        let base = name.trimmingCharacters(in: .whitespacesAndNewlines)
+        let existingKeys = Set(configs.map { TunnelConfig.nameComparisonKey($0.name) })
+        var suffix = 2
+        while existingKeys.contains(TunnelConfig.nameComparisonKey("\(base) (\(suffix))")) {
+            suffix += 1
+        }
+        return "\(base) (\(suffix))"
+    }
+
     private func endpointIssues(in configs: [TunnelConfig], touchedIDs: Set<UUID>) -> [TunnelImportIssue] {
         var issues: [TunnelImportIssue] = []
-        let endpoints = configs.compactMap { config in
-            listenerEndpoint(for: config).map { (config.id, $0) }
+        let endpoints = configs.flatMap { config in
+            config.effectiveRules.compactMap { rule in
+                listenerEndpoint(for: rule).map { (config.id, $0) }
+            }
         }
         for (index, value) in endpoints.enumerated() {
             let (id, endpoint) = value
@@ -241,30 +304,34 @@ public struct TunnelConfigurationTransfer: Sendable {
             }
         }
         for config in configs where touchedIDs.contains(config.id) {
-            guard let endpoint = exposureEndpoint(for: config),
-                  Self.isPotentiallyExposed(endpoint.host) else {
-                continue
+            for rule in config.effectiveRules {
+                guard let endpoint = exposureEndpoint(for: rule),
+                      Self.isPotentiallyExposed(endpoint.host) else {
+                    continue
+                }
+                issues.append(.exposedListener(host: endpoint.host, port: endpoint.port))
             }
-            issues.append(.exposedListener(host: endpoint.host, port: endpoint.port))
         }
         return Array(Set(issues.map(IssueKey.init))).map(\.issue).sorted(by: issueSort)
     }
 
-    private func listenerEndpoint(for config: TunnelConfig) -> ListenerEndpoint? {
-        switch config.mode {
+    private func listenerEndpoint(for rule: TunnelForwardRule) -> ListenerEndpoint? {
+        guard rule.isEnabled else { return nil }
+        switch rule.mode {
         case .localForward, .dynamicForward:
-            return ListenerEndpoint(host: normalizedHost(config.localHost), port: config.localPort)
+            return ListenerEndpoint(host: normalizedHost(rule.localHost), port: rule.localPort)
         case .remoteForward, .sshConfig:
             return nil
         }
     }
 
-    private func exposureEndpoint(for config: TunnelConfig) -> ListenerEndpoint? {
-        switch config.mode {
+    private func exposureEndpoint(for rule: TunnelForwardRule) -> ListenerEndpoint? {
+        guard rule.isEnabled else { return nil }
+        switch rule.mode {
         case .localForward, .dynamicForward:
-            return ListenerEndpoint(host: normalizedHost(config.localHost), port: config.localPort)
+            return ListenerEndpoint(host: normalizedHost(rule.localHost), port: rule.localPort)
         case .remoteForward:
-            return ListenerEndpoint(host: normalizedHost(config.remoteHost), port: config.remotePort)
+            return ListenerEndpoint(host: normalizedHost(rule.remoteHost), port: rule.remotePort)
         case .sshConfig:
             return nil
         }
@@ -316,12 +383,16 @@ public struct TunnelConfigurationTransfer: Sendable {
                 kind = 0
                 host = id.uuidString
                 port = 0
-            case .localEndpointConflict(let hostValue, let portValue):
+            case .duplicateName(let name):
                 kind = 1
+                host = TunnelConfig.nameComparisonKey(name)
+                port = 0
+            case .localEndpointConflict(let hostValue, let portValue):
+                kind = 2
                 host = hostValue
                 port = portValue
             case .exposedListener(let hostValue, let portValue):
-                kind = 2
+                kind = 3
                 host = hostValue
                 port = portValue
             }

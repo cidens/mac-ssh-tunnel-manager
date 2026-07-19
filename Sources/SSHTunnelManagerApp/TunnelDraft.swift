@@ -1,7 +1,110 @@
 import Foundation
 import SSHTunnelCore
 
-struct TunnelDraft {
+enum TunnelConfigurationKind: String, CaseIterable, Equatable {
+    case connectionGroup
+    case sshConfigReference
+}
+
+struct TunnelRuleDraft: Identifiable, Equatable {
+    var id = UUID()
+    var mode: TunnelMode = .localForward {
+        didSet {
+            if mode == .remoteForward && oldValue != .remoteForward && remoteHost.isEmpty {
+                remoteHost = "localhost"
+            }
+        }
+    }
+    var localHost = "127.0.0.1"
+    var localPort = ""
+    var remoteHost = ""
+    var remotePort = ""
+    var openURL = ""
+    var isEnabled = true
+    var riskConfirmationSignature: String?
+
+    var hasRequiredFields: Bool {
+        guard mode != .sshConfig,
+              !localHost.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
+              Self.isValidPort(localPort) else { return false }
+        return mode == .dynamicForward || (
+            !remoteHost.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+                && Self.isValidPort(remotePort)
+        )
+    }
+
+    var compactEndpointSummary: String {
+        let local = Self.endpoint(host: localHost, port: localPort)
+        switch mode {
+        case .localForward:
+            return "\(local) → \(Self.endpoint(host: remoteHost, port: remotePort))"
+        case .remoteForward:
+            return "\(Self.endpoint(host: remoteHost, port: remotePort)) → \(local)"
+        case .dynamicForward:
+            return local
+        case .sshConfig:
+            return "—"
+        }
+    }
+
+    init() {}
+
+    init(rule: TunnelForwardRule) {
+        id = rule.id
+        mode = rule.mode
+        localHost = rule.localHost
+        localPort = rule.localPort == 0 ? "" : String(rule.localPort)
+        remoteHost = rule.remoteHost
+        remotePort = rule.remotePort == 0 ? "" : String(rule.remotePort)
+        openURL = rule.openURL?.absoluteString ?? ""
+        isEnabled = rule.isEnabled
+        riskConfirmationSignature = rule.riskConfirmationSignature
+    }
+
+    func makeRule() throws -> TunnelForwardRule {
+        guard mode != .sshConfig else { throw TunnelValidationError.invalidHost("rules") }
+        guard let localPortNumber = Int(localPort.trimmingCharacters(in: .whitespacesAndNewlines)) else {
+            throw TunnelValidationError.invalidPort("localPort")
+        }
+        let remotePortNumber: Int
+        if mode == .dynamicForward {
+            remotePortNumber = 0
+        } else if let value = Int(remotePort.trimmingCharacters(in: .whitespacesAndNewlines)) {
+            remotePortNumber = value
+        } else {
+            throw TunnelValidationError.invalidPort("remotePort")
+        }
+        let url = try TunnelInputParser.optionalURL(from: openURL)
+        var rule = TunnelForwardRule(
+            id: id,
+            mode: mode,
+            localHost: localHost.trimmingCharacters(in: .whitespacesAndNewlines),
+            localPort: localPortNumber,
+            remoteHost: mode == .dynamicForward ? "" : remoteHost.trimmingCharacters(in: .whitespacesAndNewlines),
+            remotePort: remotePortNumber,
+            openURL: url,
+            isEnabled: isEnabled,
+            riskConfirmationSignature: riskConfirmationSignature
+        )
+        if !rule.hasValidRiskConfirmation {
+            rule.riskConfirmationSignature = nil
+        }
+        return rule
+    }
+
+    private static func isValidPort(_ value: String) -> Bool {
+        guard let port = Int(value.trimmingCharacters(in: .whitespacesAndNewlines)) else { return false }
+        return (1...65_535).contains(port)
+    }
+
+    private static func endpoint(host: String, port: String) -> String {
+        let normalizedHost = host.trimmingCharacters(in: .whitespacesAndNewlines)
+        let normalizedPort = port.trimmingCharacters(in: .whitespacesAndNewlines)
+        return "\(normalizedHost.isEmpty ? "—" : normalizedHost):\(normalizedPort.isEmpty ? "—" : normalizedPort)"
+    }
+}
+
+struct TunnelDraft: Equatable {
     var mode: TunnelMode = .localForward {
         didSet {
             if mode == .remoteForward && oldValue != .remoteForward {
@@ -20,6 +123,92 @@ struct TunnelDraft {
     var tags = ""
     var isAutoReconnectEnabled = false
     var isAutoStartEnabled = false
+    var primaryRuleID = UUID()
+    var isPrimaryRuleEnabled = true
+    var primaryRiskConfirmationSignature: String?
+    var additionalRules: [TunnelRuleDraft] = []
+
+    var configurationKind: TunnelConfigurationKind {
+        get { mode == .sshConfig ? .sshConfigReference : .connectionGroup }
+        set {
+            switch newValue {
+            case .connectionGroup where mode == .sshConfig:
+                mode = .localForward
+            case .sshConfigReference:
+                mode = .sshConfig
+            default:
+                break
+            }
+        }
+    }
+
+    var rules: [TunnelRuleDraft] {
+        get {
+            guard mode != .sshConfig else { return [] }
+            var primary = TunnelRuleDraft()
+            primary.id = primaryRuleID
+            primary.mode = mode
+            primary.localHost = localHost
+            primary.localPort = localPort
+            primary.remoteHost = remoteHost
+            primary.remotePort = remotePort
+            primary.openURL = openURL
+            primary.isEnabled = isPrimaryRuleEnabled
+            primary.riskConfirmationSignature = primaryRiskConfirmationSignature
+            return [primary] + additionalRules
+        }
+        set {
+            guard let primary = newValue.first else { return }
+            primaryRuleID = primary.id
+            mode = primary.mode
+            localHost = primary.localHost
+            localPort = primary.localPort
+            remoteHost = primary.remoteHost
+            remotePort = primary.remotePort
+            openURL = primary.openURL
+            isPrimaryRuleEnabled = primary.isEnabled
+            primaryRiskConfirmationSignature = primary.riskConfirmationSignature
+            additionalRules = Array(newValue.dropFirst())
+        }
+    }
+
+    var canAddRule: Bool {
+        configurationKind == .connectionGroup
+            && rules.count < TunnelConfig.maximumRuleCount
+            && rules.allSatisfy(\.hasRequiredFields)
+    }
+
+    var hasReachedRuleLimit: Bool {
+        rules.count >= TunnelConfig.maximumRuleCount
+    }
+
+    func hasSameEditableContent(as other: TunnelDraft) -> Bool {
+        guard configurationKind == other.configurationKind,
+              name == other.name,
+              tags == other.tags,
+              isAutoReconnectEnabled == other.isAutoReconnectEnabled,
+              isAutoStartEnabled == other.isAutoStartEnabled else {
+            return false
+        }
+        switch configurationKind {
+        case .connectionGroup:
+            return sshHost == other.sshHost && rules == other.rules
+        case .sshConfigReference:
+            return sshConfigName == other.sshConfigName && openURL == other.openURL
+        }
+    }
+
+    @discardableResult
+    mutating func removeRule(id: UUID) -> Bool {
+        var currentRules = rules
+        guard currentRules.count > 1,
+              let index = currentRules.firstIndex(where: { $0.id == id }) else {
+            return false
+        }
+        currentRules.remove(at: index)
+        rules = currentRules
+        return true
+    }
 
     init() {}
 
@@ -30,6 +219,13 @@ struct TunnelDraft {
         tags = tunnel.tags.joined(separator: ", ")
         isAutoReconnectEnabled = tunnel.isAutoReconnectEnabled
         isAutoStartEnabled = tunnel.isAutoStartEnabled
+
+        if tunnel.mode != .sshConfig, let primary = tunnel.effectiveRules.first {
+            primaryRuleID = primary.id
+            isPrimaryRuleEnabled = primary.isEnabled
+            primaryRiskConfirmationSignature = primary.riskConfirmationSignature
+            additionalRules = tunnel.effectiveRules.dropFirst().map(TunnelRuleDraft.init(rule:))
+        }
 
         switch tunnel.mode {
         case .localForward, .remoteForward:
@@ -79,6 +275,7 @@ struct TunnelDraft {
             config.tags = normalizedTags
             config.isAutoReconnectEnabled = isAutoReconnectEnabled
             config.isAutoStartEnabled = isAutoStartEnabled
+            try applyRules(to: &config)
             return config
         case .remoteForward:
             guard let remotePortNumber = Int(remotePort.trimmingCharacters(in: .whitespacesAndNewlines)) else {
@@ -102,6 +299,7 @@ struct TunnelDraft {
             config.tags = normalizedTags
             config.isAutoReconnectEnabled = isAutoReconnectEnabled
             config.isAutoStartEnabled = isAutoStartEnabled
+            try applyRules(to: &config)
             return config
         case .localForward:
             guard let localPortNumber = Int(localPort.trimmingCharacters(in: .whitespacesAndNewlines)) else {
@@ -125,7 +323,20 @@ struct TunnelDraft {
             config.tags = normalizedTags
             config.isAutoReconnectEnabled = isAutoReconnectEnabled
             config.isAutoStartEnabled = isAutoStartEnabled
+            try applyRules(to: &config)
             return config
         }
+    }
+
+    private func applyRules(to config: inout TunnelConfig) throws {
+        guard var primary = config.rules.first else { return }
+        primary.id = primaryRuleID
+        primary.isEnabled = isPrimaryRuleEnabled
+        primary.riskConfirmationSignature = primaryRiskConfirmationSignature
+        if !primary.hasValidRiskConfirmation {
+            primary.riskConfirmationSignature = nil
+        }
+        let remaining = try additionalRules.map { try $0.makeRule() }
+        config.replaceRules([primary] + remaining)
     }
 }

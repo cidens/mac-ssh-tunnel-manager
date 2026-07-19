@@ -28,7 +28,7 @@
 产物路径示例：
 
 ```text
-dist/SSH Tunnel Manager-0.3.2.zip
+dist/SSH Tunnel Manager-0.4.0.zip
 ```
 
 `dist/` 是构建产物目录，不提交到 Git。
@@ -37,7 +37,7 @@ dist/SSH Tunnel Manager-0.3.2.zip
 
 把 zip 文件发给用户后，用户按以下方式安装：
 
-1. 解压 `SSH Tunnel Manager-0.3.2.zip`。
+1. 解压 `SSH Tunnel Manager-0.4.0.zip`。
 2. 把 `SSH Tunnel Manager.app` 拖到 `/Applications`。
 3. 从 Finder、Spotlight 或 Launchpad 打开应用。
 4. 根据自己的 `~/.ssh/config` 添加隧道配置。
@@ -99,13 +99,16 @@ open -a 'SSH Tunnel Manager'
 
 ## 隧道配置说明
 
-应用支持四种模式：
+应用内连接组可以在一个 SSH Host 下混合以下三种规则，并通过一个 SSH 进程统一运行：
 
 - 手动转发：应用生成 `ssh -N -L localHost:localPort:remoteHost:remotePort sshHost`。
 - 远程转发：应用生成 `ssh -N -R remoteHost:remotePort:localHost:localPort sshHost`；远端非回环监听需要风险确认，实际范围受服务端 `GatewayPorts` 影响。
 - 动态 SOCKS：应用生成 `ssh -N -D localHost:localPort sshHost`，适合临时给 Git、curl 或浏览器等工具指定 SOCKS 代理。
-- SSH Config：应用只传入 `sshConfigName`，由用户自己的 `~/.ssh/config` 提供 `LocalForward`、`RemoteForward` 或 `DynamicForward`；只读导入只保存 Host 引用。
+
+SSH Config 引用是独立的只读模式：应用只传入 `sshConfigName`，由用户自己的 `~/.ssh/config` 提供转发指令；只读导入只保存 Host 引用，不复制成连接组规则。
 
 示例文档中只使用 `example-bastion`、`example-service` 和 `203.0.113.10` 这类脱敏值；分发给他人前不要把自己的真实 Host 别名、内网 IP、用户名或私钥路径写进公开文档。
 
 首次保存远程转发配置前，应用会把既有 `tunnels.json` 备份为 `tunnels.json.pre-remote-forward.bak`。降级恢复前必须退出应用，再用该文件替换 `tunnels.json`。
+
+从旧版单端口配置升级时，应用会在首次写回连接组结构前创建 `tunnels.json.pre-connection-groups.bak`。迁移失败时旧文件保持不变。需要降级时先退出应用，再用该备份替换 `tunnels.json`。

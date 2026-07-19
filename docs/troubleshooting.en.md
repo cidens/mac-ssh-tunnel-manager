@@ -89,7 +89,7 @@ Entering an alias adds only a preview candidate; it does not create or modify SS
 
 ## SSH Config Mode Reports A Missing Forwarding Directive
 
-SSH Config mode requires the selected Host to contain at least one `LocalForward`, `RemoteForward`, or `DynamicForward`. Example:
+An SSH Config reference requires the selected Host to contain at least one `LocalForward`, `RemoteForward`, or `DynamicForward`. Example:
 
 ```sshconfig
 Host example-service
