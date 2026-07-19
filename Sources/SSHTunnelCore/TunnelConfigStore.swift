@@ -11,6 +11,10 @@ public struct TunnelConfigStore: Sendable {
         configURL.appendingPathExtension("pre-import.bak")
     }
 
+    public var preConnectionGroupBackupURL: URL {
+        configURL.appendingPathExtension("pre-connection-groups.bak")
+    }
+
     public init(configURL: URL) {
         self.configURL = configURL
     }
@@ -20,8 +24,26 @@ public struct TunnelConfigStore: Sendable {
             return []
         }
 
+        let values = try configURL.resourceValues(forKeys: [.fileSizeKey])
+        if let fileSize = values.fileSize,
+           fileSize > TunnelConfigurationTransfer.maximumFileSize {
+            throw TunnelConfigurationTransferError.fileTooLarge(
+                maximumBytes: TunnelConfigurationTransfer.maximumFileSize
+            )
+        }
         let data = try Data(contentsOf: configURL)
-        return try JSONDecoder().decode([TunnelConfig].self, from: data)
+        guard data.count <= TunnelConfigurationTransfer.maximumFileSize else {
+            throw TunnelConfigurationTransferError.fileTooLarge(
+                maximumBytes: TunnelConfigurationTransfer.maximumFileSize
+            )
+        }
+        let tunnels = try JSONDecoder().decode([TunnelConfig].self, from: data)
+        guard tunnels.count <= TunnelConfigurationTransfer.maximumConfigCount else {
+            throw TunnelConfigurationTransferError.tooManyConfigs(
+                maximum: TunnelConfigurationTransfer.maximumConfigCount
+            )
+        }
+        return tunnels
     }
 
     public func save(_ tunnels: [TunnelConfig]) throws {
@@ -31,6 +53,7 @@ public struct TunnelConfigStore: Sendable {
             [.posixPermissions: 0o700],
             ofItemAtPath: directory.path
         )
+        try createPreConnectionGroupBackupIfNeeded()
         try createPreRemoteForwardBackupIfNeeded(for: tunnels)
         let encoder = JSONEncoder()
         encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
@@ -78,7 +101,9 @@ public struct TunnelConfigStore: Sendable {
 
     private func createPreRemoteForwardBackupIfNeeded(for tunnels: [TunnelConfig]) throws {
         let fileManager = FileManager.default
-        guard tunnels.contains(where: { $0.mode == .remoteForward }),
+        guard tunnels.contains(where: { tunnel in
+                  tunnel.effectiveRules.contains(where: { $0.mode == .remoteForward })
+              }),
               fileManager.fileExists(atPath: configURL.path),
               !fileManager.fileExists(atPath: preRemoteForwardBackupURL.path) else {
             return
@@ -94,6 +119,24 @@ public struct TunnelConfigStore: Sendable {
         try fileManager.setAttributes(
             [.posixPermissions: 0o600],
             ofItemAtPath: preRemoteForwardBackupURL.path
+        )
+    }
+
+    private func createPreConnectionGroupBackupIfNeeded() throws {
+        let fileManager = FileManager.default
+        guard fileManager.fileExists(atPath: configURL.path),
+              !fileManager.fileExists(atPath: preConnectionGroupBackupURL.path) else {
+            return
+        }
+        let existingData = try Data(contentsOf: configURL)
+        guard let values = try JSONSerialization.jsonObject(with: existingData) as? [[String: Any]],
+              values.contains(where: { $0["mode"] as? String != TunnelMode.sshConfig.rawValue && $0["rules"] == nil }) else {
+            return
+        }
+        try fileManager.copyItem(at: configURL, to: preConnectionGroupBackupURL)
+        try fileManager.setAttributes(
+            [.posixPermissions: 0o600],
+            ofItemAtPath: preConnectionGroupBackupURL.path
         )
     }
 

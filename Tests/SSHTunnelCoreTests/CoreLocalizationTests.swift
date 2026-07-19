@@ -42,11 +42,11 @@ import Testing
     )
     #expect(
         TunnelValidationError.sshHostContainsForwardingDirectives("example-bastion").description(language: "en")
-            == "SSH Host example-bastion already defines forwarding directives. Use SSH Config mode or choose a Host without LocalForward, RemoteForward, or DynamicForward."
+            == "SSH Host example-bastion already defines forwarding directives. Create an SSH Config reference or choose a Host without LocalForward, RemoteForward, or DynamicForward."
     )
     #expect(
         TunnelValidationError.sshHostContainsForwardingDirectives("example-bastion").description(language: "zh-Hans")
-            == "SSH Host example-bastion 已经定义转发指令。请改用 SSH Config 模式，或选择不包含 LocalForward、RemoteForward、DynamicForward 的 Host。"
+            == "SSH Host example-bastion 已经定义转发指令。请新建 SSH Config 引用，或选择不包含 LocalForward、RemoteForward、DynamicForward 的 Host。"
     )
 }
 

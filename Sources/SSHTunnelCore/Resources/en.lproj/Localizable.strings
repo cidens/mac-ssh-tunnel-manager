@@ -14,6 +14,11 @@
 "field.remoteHost" = "Remote host";
 "field.remotePort" = "Remote port";
 "field.sshConfigName" = "SSH Config";
+"field.rules" = "forwarding rules";
+"error.invalidRule" = "Forwarding rule %d is invalid: %@";
+"error.sshConfigRulesForbidden" = "SSH Config references cannot contain app-managed rules.";
+"error.tooManyRules" = "A connection group can contain at most %d forwarding rules.";
+"error.noEnabledRules" = "Enable at least one forwarding rule to start.";
 "field.openURL" = "Open URL";
 "error.emptyField" = "%@ is required";
 "error.invalidHost" = "%@ contains unsupported characters";
@@ -22,7 +27,7 @@
 "error.localPortOccupied" = "Local port %@:%d is already listening. Choose another local port before saving.";
 "error.sshConfigMissingForwardingDirective" = "%@ must be an SSH Config Host with at least one LocalForward, RemoteForward, or DynamicForward";
 "error.sshConfigValidationTimedOut" = "Checking SSH Config Host %@ timed out (%d seconds). Common causes include Match exec, ProxyJump, or slow DNS; retry or check your SSH config.";
-"error.sshHostContainsForwardingDirectives" = "SSH Host %@ already defines forwarding directives. Use SSH Config mode or choose a Host without LocalForward, RemoteForward, or DynamicForward.";
+"error.sshHostContainsForwardingDirectives" = "SSH Host %@ already defines forwarding directives. Create an SSH Config reference or choose a Host without LocalForward, RemoteForward, or DynamicForward.";
 "error.tooManyTags" = "Add no more than %d tags.";
 "error.tagTooLong" = "Each tag must be %d characters or fewer.";
 "transfer.error.fileTooLarge" = "The configuration file exceeds the size limit (%d bytes maximum).";

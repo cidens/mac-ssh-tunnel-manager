@@ -53,6 +53,14 @@ private struct TunnelRiskConfirmationRequired: Error {
     }
 }
 
+private struct TunnelNameConflictError: LocalizedError {
+    let name: String
+
+    var errorDescription: String? {
+        AppStrings.format("error.duplicateTunnelName", name)
+    }
+}
+
 private enum TunnelStartTrigger {
     case manual
     case automatic
@@ -119,11 +127,6 @@ final class TunnelManager: ObservableObject {
         }
 
         refreshStatuses()
-        refreshTimer = Timer.scheduledTimer(withTimeInterval: 2, repeats: true) { [weak self] _ in
-            Task { @MainActor in
-                self?.refreshStatuses()
-            }
-        }
         willTerminateObserver = NotificationCenter.default.addObserver(
             forName: NSApplication.willTerminateNotification,
             object: nil,
@@ -383,6 +386,7 @@ final class TunnelManager: ObservableObject {
             $0.folding(options: .caseInsensitive, locale: nil)
         })
         var seen = existingKeys
+        var nameKeys = Set(tunnels.map { TunnelConfig.nameComparisonKey($0.name) })
         var imported: [TunnelConfig] = []
         var nextManualOrder = (tunnels.compactMap(\.manualOrder).max() ?? -1) + 1
 
@@ -391,6 +395,9 @@ final class TunnelManager: ObservableObject {
                 let alias = rawAlias.trimmingCharacters(in: .whitespacesAndNewlines)
                 let key = alias.folding(options: .caseInsensitive, locale: nil)
                 guard seen.insert(key).inserted else { continue }
+                guard nameKeys.insert(TunnelConfig.nameComparisonKey(alias)).inserted else {
+                    throw TunnelNameConflictError(name: alias)
+                }
                 var tunnel = TunnelConfig(name: alias, sshConfigName: alias, openURL: nil)
                 try commandBuilder.validate(tunnel)
                 tunnel.manualOrder = nextManualOrder
@@ -429,8 +436,14 @@ final class TunnelManager: ObservableObject {
         do {
             var tunnel = try validatedTunnel(from: draft, allowRiskyBind: allowRiskyBind)
             tunnel.manualOrder = (tunnels.map { $0.manualOrder ?? -1 }.max() ?? -1) + 1
+            let previousTunnels = tunnels
             tunnels.append(tunnel)
-            try save()
+            do {
+                try save()
+            } catch {
+                tunnels = previousTunnels
+                throw error
+            }
             onSuccess?()
             return true
         } catch let confirmation as TunnelRiskConfirmationRequired {
@@ -461,8 +474,32 @@ final class TunnelManager: ObservableObject {
         onSuccess: (() -> Void)?
     ) -> Bool {
         addError = ""
-        guard !isRunRequested(for: tunnel) else {
-            addError = AppStrings.stopBeforeEditing()
+        let existingKind: TunnelConfigurationKind = tunnel.mode == .sshConfig
+            ? .sshConfigReference
+            : .connectionGroup
+        guard draft.configurationKind == existingKind else {
+            addError = AppStrings.string("error.configurationTypeImmutable")
+            return false
+        }
+        if isRunRequested(for: tunnel) {
+            requestRiskConfirmation(
+                title: AppStrings.string("edit.restart.title"),
+                message: AppStrings.string("edit.restart.message")
+            ) { [weak self] in
+                guard let self else { return }
+                self.stop(tunnel)
+                let updated = self.updateTunnel(
+                    tunnel,
+                    with: draft,
+                    allowRiskyBind: allowRiskyBind,
+                    onSuccess: onSuccess
+                )
+                if updated,
+                   let saved = self.tunnels.first(where: { $0.id == tunnel.id }),
+                   saved.mode == .sshConfig || saved.effectiveRules.contains(where: \.isEnabled) {
+                    self.start(saved)
+                }
+            }
             return false
         }
 
@@ -475,12 +512,18 @@ final class TunnelManager: ObservableObject {
             guard let index = tunnels.firstIndex(where: { $0.id == tunnel.id }) else {
                 return false
             }
+            let previousTunnels = tunnels
             updatedTunnel.isFavorite = tunnel.isFavorite
             updatedTunnel.manualOrder = tunnel.manualOrder
             updatedTunnel.lastUsedAt = tunnel.lastUsedAt
             tunnels[index] = updatedTunnel
             runtimes[tunnel.id]?.lastError = ""
-            try save()
+            do {
+                try save()
+            } catch {
+                tunnels = previousTunnels
+                throw error
+            }
             refreshStatuses()
             onSuccess?()
             return true
@@ -502,11 +545,13 @@ final class TunnelManager: ObservableObject {
 
     func deleteTunnel(_ tunnel: TunnelConfig) {
         stop(tunnel)
+        let previousTunnels = tunnels
         tunnels.removeAll { $0.id == tunnel.id }
         runtimes.removeValue(forKey: tunnel.id)
         do {
             try save()
         } catch {
+            tunnels = previousTunnels
             addError = AppStrings.failedToSaveTunnels(error.localizedDescription)
         }
     }
@@ -563,30 +608,9 @@ final class TunnelManager: ObservableObject {
         isAutomaticRecovery: Bool
     ) {
         do {
-            try commandBuilder.validate(tunnel)
+            try commandBuilder.validateForStart(tunnel)
             try validateGeneratedForwardingHost(tunnel)
-            if Self.shouldCheckLocalPort(for: tunnel) && Self.isListening(host: tunnel.localHost, port: tunnel.localPort) {
-                var runtime = runtimes[tunnel.id] ?? TunnelRuntimeState()
-                runtime.process = nil
-                runtime.isPortListening = true
-                runtime.lastError = sanitizedDiagnostic(
-                    AppStrings.localPortAlreadyListeningOutsideApp(
-                        host: tunnel.localHost,
-                        port: tunnel.localPort
-                    ),
-                    for: tunnel
-                )
-                let previousPhase = runtime.recovery.phase
-                _ = runtime.recovery.requestStop(reason: .nonRetryableFailure)
-                updateStatusChangedAt(&runtime, from: previousPhase)
-                recordFailure(
-                    in: &runtime,
-                    diagnostic: runtime.lastError,
-                    nextRetryAt: nil
-                )
-                runtimes[tunnel.id] = runtime
-                return
-            }
+            try validateLocalEndpointConflicts(for: tunnel)
             if tunnel.mode == .sshConfig {
                 let sshConfigName = tunnel.sshConfigName ?? ""
                 switch sshConfigForwardingStatus(named: sshConfigName) {
@@ -728,7 +752,8 @@ final class TunnelManager: ObservableObject {
             }
             stopRecoveryTasks(for: tunnel.id, reason: .userRequested, clearError: true)
             requestRiskConfirmation(title: confirmation.title, message: confirmation.message) { [weak self] in
-                self?.start(tunnel, allowRiskyBind: true, trigger: .manual)
+                guard let self, let confirmed = self.persistRiskConfirmations(for: tunnel) else { return }
+                self.start(confirmed, allowRiskyBind: true, trigger: .manual)
             }
         } catch {
             let retryableValidationError = (error as? TunnelValidationError)
@@ -1069,17 +1094,44 @@ final class TunnelManager: ObservableObject {
     }
 
     func openURL(for tunnel: TunnelConfig) {
-        guard let url = tunnel.openURL else {
+        guard let url = tunnel.effectiveRules.compactMap(\.openURL).first ?? tunnel.openURL else {
             return
         }
+        openURL(url)
+    }
+
+    func openURL(_ url: URL) {
+        guard Self.isAllowedOpenURL(url) else { return }
         NSWorkspace.shared.open(url)
     }
 
+    func openURLs(for tunnel: TunnelConfig) -> [URL] {
+        let values = tunnel.mode == .sshConfig
+            ? [tunnel.openURL].compactMap { $0 }
+            : tunnel.effectiveRules.filter(\.isEnabled).compactMap(\.openURL)
+        return Array(NSOrderedSet(array: values))
+            .compactMap { $0 as? URL }
+            .filter(Self.isAllowedOpenURL)
+    }
+
+    nonisolated static func isAllowedOpenURL(_ url: URL) -> Bool {
+        guard let components = URLComponents(url: url, resolvingAgainstBaseURL: false),
+              let scheme = components.scheme?.lowercased(),
+              ["http", "https"].contains(scheme),
+              let host = components.host,
+              !host.isEmpty else {
+            return false
+        }
+        return true
+    }
+
     func refreshStatuses() {
+        scheduleNextAutomaticStatusRefresh()
         for tunnel in tunnels {
-            var runtime = runtimes[tunnel.id] ?? TunnelRuntimeState()
-            if !Self.shouldCheckLocalPort(for: tunnel) {
-                runtime.isPortListening = false
+            guard !Self.shouldCheckLocalPort(for: tunnel),
+                  var runtime = runtimes[tunnel.id],
+                  Self.updatePortListening(false, in: &runtime) else {
+                continue
             }
             runtimes[tunnel.id] = runtime
         }
@@ -1088,26 +1140,22 @@ final class TunnelManager: ObservableObject {
             return
         }
 
-        let endpoints = Set(tunnels.compactMap { tunnel -> LocalPortEndpoint? in
-            guard Self.shouldCheckLocalPort(for: tunnel) else {
-                return nil
-            }
-            return LocalPortEndpoint(host: tunnel.localHost, port: tunnel.localPort)
-        })
+        let endpoints = Set(tunnels.flatMap(Self.localListenerEndpoints(for:)))
         guard !endpoints.isEmpty else {
             return
         }
 
         statusRefreshTask = Task { [weak self] in
             let results = await Task.detached(priority: .utility) {
-                var results: [LocalPortEndpoint: Bool] = [:]
-                for endpoint in endpoints {
-                    guard !Task.isCancelled else {
-                        break
-                    }
-                    results[endpoint] = Self.isListening(host: endpoint.host, port: endpoint.port)
-                }
-                return results
+                guard !Task.isCancelled else { return [LocalPortEndpoint: Bool]() }
+                let output = Self.listeningPortsSnapshot()
+                return Dictionary(uniqueKeysWithValues: endpoints.map { endpoint in
+                    (endpoint, PortStatusParser.isListening(
+                        lsofOutput: output,
+                        host: endpoint.host,
+                        port: endpoint.port
+                    ))
+                })
             }.value
 
             guard let self else {
@@ -1119,15 +1167,52 @@ final class TunnelManager: ObservableObject {
             }
 
             for tunnel in self.tunnels where Self.shouldCheckLocalPort(for: tunnel) {
-                let endpoint = LocalPortEndpoint(host: tunnel.localHost, port: tunnel.localPort)
-                guard let isListening = results[endpoint] else {
-                    continue
-                }
+                let tunnelEndpoints = Self.localListenerEndpoints(for: tunnel)
+                let isListening = !tunnelEndpoints.isEmpty && tunnelEndpoints.allSatisfy { results[$0] == true }
                 var runtime = self.runtimes[tunnel.id] ?? TunnelRuntimeState()
-                runtime.isPortListening = isListening
-                self.runtimes[tunnel.id] = runtime
+                if Self.updatePortListening(isListening, in: &runtime) {
+                    self.runtimes[tunnel.id] = runtime
+                }
+            }
+            self.scheduleNextAutomaticStatusRefresh()
+        }
+    }
+
+    private func scheduleNextAutomaticStatusRefresh() {
+        refreshTimer?.invalidate()
+        let requiresFastRefresh = tunnels.contains { tunnel in
+            Self.requiresFastStatusRefresh(
+                for: tunnel,
+                runtime: runtimes[tunnel.id] ?? TunnelRuntimeState()
+            )
+        }
+        let interval = requiresFastRefresh
+            ? Self.activeStatusRefreshInterval
+            : Self.stableStatusRefreshInterval
+        refreshTimer = Timer.scheduledTimer(withTimeInterval: interval, repeats: false) { [weak self] _ in
+            Task { @MainActor in
+                self?.refreshStatuses()
             }
         }
+    }
+
+    static func requiresFastStatusRefresh(
+        for tunnel: TunnelConfig,
+        runtime: TunnelRuntimeState
+    ) -> Bool {
+        shouldCheckLocalPort(for: tunnel)
+            && runtime.recovery.wantsToRun
+            && !runtime.isPortListening
+    }
+
+    @discardableResult
+    static func updatePortListening(
+        _ isListening: Bool,
+        in runtime: inout TunnelRuntimeState
+    ) -> Bool {
+        guard runtime.isPortListening != isListening else { return false }
+        runtime.isPortListening = isListening
+        return true
     }
 
     private func save() throws {
@@ -1183,21 +1268,18 @@ final class TunnelManager: ObservableObject {
             tunnel.mode.rawValue,
             AppStrings.modeName(tunnel.mode)
         ]
-        switch tunnel.mode {
-        case .localForward:
-            fields += [
-                tunnel.sshHost, tunnel.localHost, String(tunnel.localPort),
-                tunnel.remoteHost, String(tunnel.remotePort)
-            ]
-        case .remoteForward:
-            fields += [
-                tunnel.sshHost, tunnel.remoteHost, String(tunnel.remotePort),
-                tunnel.localHost, String(tunnel.localPort)
-            ]
-        case .dynamicForward:
-            fields += [tunnel.sshHost, tunnel.localHost, String(tunnel.localPort)]
-        case .sshConfig:
+        if tunnel.mode == .sshConfig {
             fields.append(tunnel.sshConfigName ?? "")
+        } else {
+            fields.append(tunnel.sshHost)
+            for rule in tunnel.effectiveRules {
+                fields += [
+                    rule.mode.rawValue, AppStrings.modeName(rule.mode),
+                    rule.localHost, String(rule.localPort),
+                    rule.remoteHost, String(rule.remotePort),
+                    rule.openURL?.absoluteString ?? ""
+                ]
+            }
         }
         return fields.joined(separator: " ")
     }
@@ -1228,14 +1310,29 @@ final class TunnelManager: ObservableObject {
     }
 
     private func sanitizedDiagnostic(_ message: String, for tunnel: TunnelConfig) -> String {
-        TunnelDiagnosticSanitizer.sanitize(
+        let ruleValues = tunnel.effectiveRules.flatMap { rule in
+            [rule.localHost, rule.remoteHost]
+        }
+        let sanitized = TunnelDiagnosticSanitizer.sanitize(
             message,
             sensitiveValues: [
                 tunnel.sshHost,
                 tunnel.sshConfigName ?? "",
                 tunnel.localHost,
                 tunnel.remoteHost
-            ]
+            ] + ruleValues
+        )
+        guard tunnel.mode != .sshConfig,
+              let match = tunnel.effectiveRules.enumerated().first(where: { _, rule in
+                  message.contains(String(rule.listenerPort))
+              }) else {
+            return sanitized
+        }
+        return AppStrings.format(
+            "error.ruleFailure",
+            match.offset + 1,
+            AppStrings.modeName(match.element.mode),
+            sanitized
         )
     }
 
@@ -1254,12 +1351,11 @@ final class TunnelManager: ObservableObject {
         id: TunnelConfig.ID = UUID(),
         allowRiskyBind: Bool
     ) throws -> TunnelConfig {
-        let tunnel = try draft.makeConfig(id: id)
+        var tunnel = try draft.makeConfig(id: id)
         try commandBuilder.validate(tunnel)
+        try validateUniqueName(tunnel.name, excluding: tunnel.id)
+        try validateLocalEndpointConflicts(for: tunnel)
         try validateGeneratedForwardingHost(tunnel)
-        if Self.shouldCheckLocalPort(for: tunnel) && Self.isListening(host: tunnel.localHost, port: tunnel.localPort) {
-            throw TunnelValidationError.localPortOccupied(tunnel.localHost, tunnel.localPort)
-        }
         if tunnel.mode == .sshConfig {
             let sshConfigName = tunnel.sshConfigName ?? ""
             switch sshConfigForwardingStatus(named: sshConfigName) {
@@ -1275,12 +1371,39 @@ final class TunnelManager: ObservableObject {
             }
         } else {
             try validateRiskyBind(tunnel, allowRiskyBind: allowRiskyBind)
+            if allowRiskyBind {
+                tunnel.replaceRules(tunnel.effectiveRules.map { rule in
+                    var confirmed = rule
+                    if rule.isEnabled && Self.isPotentiallyExposedBindHost(rule.listenerHost) {
+                        confirmed.riskConfirmationSignature = rule.currentRiskSignature
+                    }
+                    return confirmed
+                })
+            }
         }
         return tunnel
     }
 
+    private func validateUniqueName(_ name: String, excluding id: TunnelConfig.ID) throws {
+        let key = TunnelConfig.nameComparisonKey(name)
+        guard !tunnels.contains(where: {
+            $0.id != id && TunnelConfig.nameComparisonKey($0.name) == key
+        }) else {
+            throw TunnelNameConflictError(name: name)
+        }
+    }
+
     static func shouldCheckLocalPort(for tunnel: TunnelConfig) -> Bool {
-        tunnel.mode == .localForward || tunnel.mode == .dynamicForward
+        !localListenerEndpoints(for: tunnel).isEmpty
+    }
+
+    private static func localListenerEndpoints(for tunnel: TunnelConfig) -> [LocalPortEndpoint] {
+        tunnel.effectiveRules.compactMap { rule in
+            guard rule.isEnabled, rule.mode == .localForward || rule.mode == .dynamicForward else {
+                return nil
+            }
+            return LocalPortEndpoint(host: rule.localHost, port: rule.localPort)
+        }
     }
 
     private static func usesGeneratedForwardingArguments(_ tunnel: TunnelConfig) -> Bool {
@@ -1288,27 +1411,93 @@ final class TunnelManager: ObservableObject {
     }
 
     private static let sshConfigValidationTimeoutSeconds = 10
+    private static let activeStatusRefreshInterval: TimeInterval = 2
+    private static let stableStatusRefreshInterval: TimeInterval = 30
 
     private func validateRiskyBind(_ tunnel: TunnelConfig, allowRiskyBind: Bool) throws {
-        guard !allowRiskyBind else {
-            return
+        guard !allowRiskyBind else { return }
+        let unconfirmed = tunnel.effectiveRules.enumerated().filter { _, rule in
+            rule.isEnabled && Self.isPotentiallyExposedBindHost(rule.listenerHost) && !rule.hasValidRiskConfirmation
         }
-
-        if Self.shouldCheckLocalPort(for: tunnel),
-           Self.isPotentiallyExposedBindHost(tunnel.localHost) {
+        guard !unconfirmed.isEmpty else { return }
+        if unconfirmed.count == 1, let rule = unconfirmed.first?.element {
+            if rule.mode == .remoteForward {
+                throw TunnelRiskConfirmationRequired(
+                    title: AppStrings.riskyRemoteBindTitle(),
+                    message: AppStrings.riskyRemoteBindMessage(
+                        host: rule.remoteHost,
+                        port: rule.remotePort
+                    )
+                )
+            }
             throw TunnelRiskConfirmationRequired(message: AppStrings.riskyLocalBindMessage())
         }
+        let endpoints = unconfirmed.map { index, rule in
+            "\(index + 1). \(AppStrings.modeName(rule.mode)) \(rule.listenerHost):\(rule.listenerPort)"
+        }.joined(separator: "\n")
+        throw TunnelRiskConfirmationRequired(
+            title: AppStrings.string("security.riskyGroup.title"),
+            message: AppStrings.format("security.riskyGroup.message", endpoints)
+        )
+    }
 
-        if tunnel.mode == .remoteForward,
-           Self.isPotentiallyExposedBindHost(tunnel.remoteHost) {
-            throw TunnelRiskConfirmationRequired(
-                title: AppStrings.riskyRemoteBindTitle(),
-                message: AppStrings.riskyRemoteBindMessage(
-                    host: tunnel.remoteHost,
-                    port: tunnel.remotePort
-                )
-            )
+    private func persistRiskConfirmations(for tunnel: TunnelConfig) -> TunnelConfig? {
+        guard let index = tunnels.firstIndex(where: { $0.id == tunnel.id }) else { return nil }
+        let previous = tunnels[index]
+        var confirmed = previous
+        confirmed.replaceRules(previous.effectiveRules.map { rule in
+            var value = rule
+            if rule.isEnabled && Self.isPotentiallyExposedBindHost(rule.listenerHost) {
+                value.riskConfirmationSignature = rule.currentRiskSignature
+            }
+            return value
+        })
+        tunnels[index] = confirmed
+        do {
+            try save()
+            return confirmed
+        } catch {
+            tunnels[index] = previous
+            addError = AppStrings.failedToSaveTunnels(error.localizedDescription)
+            return nil
         }
+    }
+
+    private func validateLocalEndpointConflicts(for tunnel: TunnelConfig) throws {
+        let candidateEndpoints = Self.localListenerEndpoints(for: tunnel)
+        let listeningPorts = candidateEndpoints.isEmpty ? "" : Self.listeningPortsSnapshot()
+        for (index, endpoint) in candidateEndpoints.enumerated() {
+            if candidateEndpoints.dropFirst(index + 1).contains(where: {
+                $0.port == endpoint.port && Self.listenerHostsOverlap($0.host, endpoint.host)
+            }) {
+                throw TunnelValidationError.localPortOccupied(endpoint.host, endpoint.port)
+            }
+            for other in tunnels where other.id != tunnel.id {
+                if Self.localListenerEndpoints(for: other).contains(where: {
+                    $0.port == endpoint.port && Self.listenerHostsOverlap($0.host, endpoint.host)
+                }) {
+                    throw TunnelValidationError.localPortOccupied(endpoint.host, endpoint.port)
+                }
+            }
+            if PortStatusParser.isListening(
+                lsofOutput: listeningPorts,
+                host: endpoint.host,
+                port: endpoint.port
+            ) {
+                throw TunnelValidationError.localPortOccupied(endpoint.host, endpoint.port)
+            }
+        }
+    }
+
+    private static func listenerHostsOverlap(_ lhs: String, _ rhs: String) -> Bool {
+        let normalize: (String) -> String = { value in
+            let lower = value.lowercased()
+            return lower == "localhost" ? "127.0.0.1" : lower
+        }
+        let left = normalize(lhs)
+        let right = normalize(rhs)
+        let wildcards = Set(["*", "0.0.0.0", "::", "[::]"])
+        return left == right || wildcards.contains(left) || wildcards.contains(right)
     }
 
     private func validateSSHConfigRisk(
@@ -1386,22 +1575,21 @@ final class TunnelManager: ObservableObject {
         }
     }
 
-    nonisolated private static func isListening(host: String, port: Int) -> Bool {
+    nonisolated private static func listeningPortsSnapshot() -> String {
         let process = Process()
         let output = Pipe()
         process.executableURL = URL(fileURLWithPath: "/usr/sbin/lsof")
-        process.arguments = ["-nP", "-iTCP:\(port)", "-sTCP:LISTEN"]
+        process.arguments = ["-nP", "-iTCP", "-sTCP:LISTEN"]
         process.standardOutput = output
-        process.standardError = Pipe()
+        process.standardError = FileHandle.nullDevice
 
         do {
             try process.run()
-            process.waitUntilExit()
             let data = output.fileHandleForReading.readDataToEndOfFile()
-            let text = String(data: data, encoding: .utf8) ?? ""
-            return PortStatusParser.isListening(lsofOutput: text, host: host, port: port)
+            process.waitUntilExit()
+            return String(data: data, encoding: .utf8) ?? ""
         } catch {
-            return false
+            return ""
         }
     }
 

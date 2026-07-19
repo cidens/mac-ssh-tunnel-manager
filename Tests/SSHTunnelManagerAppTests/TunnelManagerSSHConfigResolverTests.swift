@@ -3,6 +3,44 @@ import Testing
 import SSHTunnelCore
 @testable import SSHTunnelManagerApp
 
+@Test func openURLBoundaryAllowsOnlyHTTPAndHTTPSWithAHost() throws {
+    #expect(TunnelManager.isAllowedOpenURL(try #require(URL(string: "https://example.com/path"))))
+    #expect(TunnelManager.isAllowedOpenURL(try #require(URL(string: "http://127.0.0.1:8080"))))
+    #expect(!TunnelManager.isAllowedOpenURL(try #require(URL(string: "file:///etc/passwd"))))
+    #expect(!TunnelManager.isAllowedOpenURL(try #require(URL(string: "ssh://example.com"))))
+    #expect(!TunnelManager.isAllowedOpenURL(try #require(URL(string: "https:relative"))))
+}
+
+@MainActor
+@Test func statusRefreshIsFastOnlyUntilARunRequestedLocalListenerIsConfirmed() {
+    let tunnel = TunnelConfig(
+        name: "Example",
+        sshHost: "example-host",
+        localHost: "127.0.0.1",
+        localPort: 18_080,
+        remoteHost: "localhost",
+        remotePort: 8_080,
+        openURL: nil
+    )
+    var runtime = TunnelRuntimeState()
+
+    #expect(!TunnelManager.requiresFastStatusRefresh(for: tunnel, runtime: runtime))
+    _ = runtime.recovery.requestStart()
+    #expect(TunnelManager.requiresFastStatusRefresh(for: tunnel, runtime: runtime))
+    runtime.isPortListening = true
+    #expect(!TunnelManager.requiresFastStatusRefresh(for: tunnel, runtime: runtime))
+}
+
+@MainActor
+@Test func unchangedPortListeningStateDoesNotRequestAPublishedRuntimeUpdate() {
+    var runtime = TunnelRuntimeState()
+
+    #expect(!TunnelManager.updatePortListening(false, in: &runtime))
+    #expect(TunnelManager.updatePortListening(true, in: &runtime))
+    #expect(runtime.isPortListening)
+    #expect(!TunnelManager.updatePortListening(true, in: &runtime))
+}
+
 @MainActor
 @Test func addDynamicForwardRejectsHostWithForwardingDirectivesFromInjectedResolver() throws {
     let directory = try temporaryDirectory()
@@ -146,6 +184,39 @@ import SSHTunnelCore
     #expect(manager.tunnels.count == 1)
     #expect(manager.riskWarning == nil)
     #expect(didSucceed)
+    let savedRule = try #require(manager.tunnels.first?.effectiveRules.first)
+    #expect(savedRule.hasValidRiskConfirmation)
+}
+
+@MainActor
+@Test func addConnectionGroupRejectsConflictingLocalRulesBeforeStarting() throws {
+    let directory = try temporaryDirectory()
+    let resolver = StubSSHConfigResolver(results: [
+        "example-bastion": .resolved("user appuser\nhostname example-bastion\n")
+    ])
+    let manager = TunnelManager(
+        store: TunnelConfigStore(configURL: directory.appending(path: "tunnels.json")),
+        sshConfigResolver: resolver
+    )
+    defer { manager.prepareForApplicationTermination() }
+    var draft = TunnelDraft()
+    draft.name = "Conflicting group"
+    draft.sshHost = "example-bastion"
+    draft.localHost = "127.0.0.1"
+    draft.localPort = "45123"
+    draft.remoteHost = "db-one"
+    draft.remotePort = "5432"
+    var second = TunnelRuleDraft()
+    second.localHost = "localhost"
+    second.localPort = "45123"
+    second.remoteHost = "db-two"
+    second.remotePort = "5432"
+    draft.additionalRules = [second]
+
+    #expect(!manager.addTunnel(draft))
+    #expect(manager.tunnels.isEmpty)
+    #expect(manager.addError.contains("45123"))
+    #expect(resolver.requestedNames.isEmpty)
 }
 
 @MainActor
@@ -373,6 +444,27 @@ import SSHTunnelCore
 }
 
 @MainActor
+@Test func addAndBatchImportRejectCaseInsensitiveDuplicateTunnelNames() throws {
+    let directory = try temporaryDirectory()
+    let store = TunnelConfigStore(configURL: directory.appending(path: "tunnels.json"))
+    try store.save([TunnelConfig(name: "Existing", sshConfigName: "existing-service", openURL: nil)])
+    let resolver = StubSSHConfigResolver(results: [:])
+    let manager = TunnelManager(store: store, sshConfigResolver: resolver)
+    defer { manager.prepareForApplicationTermination() }
+
+    var draft = TunnelDraft()
+    draft.configurationKind = .sshConfigReference
+    draft.name = "  existing  "
+    draft.sshConfigName = "different-service"
+
+    #expect(!manager.addTunnel(draft))
+    #expect(manager.addError.contains("existing"))
+    #expect(resolver.requestedNames.isEmpty)
+    #expect(!manager.importSSHConfigAliases(["EXISTING"]))
+    #expect(manager.tunnels.map(\.name) == ["Existing"])
+}
+
+@MainActor
 @Test func batchImportRollsBackWhenPersistenceFails() throws {
     let directory = try temporaryDirectory()
     let configURL = directory.appending(path: "tunnels.json")
@@ -539,6 +631,37 @@ import SSHTunnelCore
     #expect(!committed)
     #expect(manager.tunnels.isEmpty)
     #expect(!FileManager.default.fileExists(atPath: store.configURL.path))
+}
+
+@MainActor
+@Test func updateRejectsChangingAPersistedConfigurationType() throws {
+    let directory = try temporaryDirectory()
+    let store = TunnelConfigStore(configURL: directory.appending(path: "tunnels.json"))
+    let original = TunnelConfig(
+        name: "Managed group",
+        sshHost: "example-host",
+        localHost: "127.0.0.1",
+        localPort: 18_081,
+        remoteHost: "db",
+        remotePort: 5_432,
+        openURL: nil
+    )
+    try store.save([original])
+    let manager = TunnelManager(
+        store: store,
+        sshConfigResolver: StubSSHConfigResolver(results: [:])
+    )
+    defer { manager.prepareForApplicationTermination() }
+    let beforeUpdate = manager.tunnels
+    var draft = TunnelDraft(tunnel: original)
+    draft.configurationKind = .sshConfigReference
+    draft.sshConfigName = "example-reference"
+
+    let updated = manager.updateTunnel(original, with: draft)
+
+    #expect(!updated)
+    #expect(manager.tunnels == beforeUpdate)
+    #expect(manager.addError.contains("不能改变类型") || manager.addError.contains("cannot be changed"))
 }
 
 private final class StubSSHConfigResolver: SSHConfigResolving, @unchecked Sendable {

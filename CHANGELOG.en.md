@@ -6,6 +6,16 @@ This project follows the basic Semantic Versioning convention: patch releases fo
 
 ## Unreleased
 
+## 0.4.0
+
+- Moves Add and Edit out of inline list cards into a dedicated sheet so the main list stays compact and stable. Multi-rule forms expand one rule at a time, keep the title and actions visible, and confirm before discarding unsaved changes.
+- Groups connect-on-launch and automatic reconnection into a separate Automation card, visually separating them from basic fields and forwarding rules.
+- Makes tunnel display names unique after trimming and case-insensitive comparison. Add, Edit, and imports reject conflicts, while JSON Import as Copy appends a numeric suffix.
+- Reduces local-listener status overhead by taking one `lsof` snapshot per refresh, polling every two seconds only while a Local/SOCKS listener is being established, then every 30 seconds after listening is confirmed. Unchanged results no longer publish runtime state or trigger redundant SwiftUI rendering, while event and manual refreshes remain immediate.
+- Tightens local data boundaries with a 1 MiB limit for persisted configuration and each scanned SSH Config file, plus a final HTTP/HTTPS-with-host check before opening URLs.
+- Adds connection groups so one SSH Host and one SSH process can carry mixed Local, Remote, and Dynamic SOCKS rules. New configurations explicitly choose a Connection Group or SSH Config Reference, saved types cannot be converted in place, each rule clearly controls whether it participates, and start, stop, reconnect, and connect-on-launch remain group-level operations.
+- Upgrades configuration export to `schemaVersion = 2`, keeps read-only schema v1 import, and safely migrates released single-forward `tunnels.json` files after creating a byte-for-byte recovery backup.
+- Adds JSON configuration import and export for all or selected configurations. Import validates structure, fields, counts, listener conflicts, and exposure risks; supports Skip, Replace, and Import as Copy for matching IDs; disables connect-on-launch for imported items; and protects existing data with a pre-import backup, atomic writes, and rollback on failure.
 - Adds default-disabled macOS login-item registration and per-tunnel Connect When the App Starts. The app uses `SMAppService.mainApp`, drives the toggle from actual system state while showing only actionable feedback, applies the same connection selection to manual and login launches, skips risky listeners without a valid confirmation, and continues starting other selected tunnels after an individual failure.
 - Adds read-only SSH Config discovery and batch import across accessible `Include` files, case-insensitive duplicate handling, `/usr/bin/ssh -G` previews for `LocalForward`, `RemoteForward`, `DynamicForward`, and listener exposure, confirmation before configurations containing `Match exec` are evaluated, reference-only imports that do not connect, and risk confirmation for potentially exposed listeners.
 - Adds opt-in connection failure and recovery notifications, requests permission only when enabled, limits each continuous failure cycle to one failure and one recovery notification, and suppresses disconnection notifications for user actions.
@@ -19,6 +29,8 @@ This project follows the basic Semantic Versioning convention: patch releases fo
 - Adds manual, name, runtime-status, and last-used sorting; persists manual order and last-used time with rollback on save failure while preserving legacy JSON order.
 - Trims tags, deduplicates them case-insensitively, and limits each tunnel to 10 tags of at most 32 characters.
 - Adds horizontal scrolling for long tag lists, mode-aware search fields, and configuration-compatibility and sort-persistence tests.
+
+**Full Changelog:** [v0.3.2...v0.4.0](https://github.com/cidens/mac-ssh-tunnel-manager/compare/v0.3.2...v0.4.0)
 
 ## 0.3.2
 

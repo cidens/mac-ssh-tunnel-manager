@@ -73,6 +73,25 @@ import Testing
     )])
 }
 
+@Test func oversizedSSHConfigIsRejectedBeforeParsing() throws {
+    let root = try temporarySSHDirectory()
+    defer { try? FileManager.default.removeItem(at: root) }
+    let config = root.appending(path: "config")
+    try Data(repeating: 0x20, count: 65).write(to: config)
+
+    let result = SSHConfigDiscovery(
+        configURL: config,
+        includeBaseURL: root,
+        maximumFileSize: 64
+    ).discover()
+
+    #expect(result.hosts.isEmpty)
+    #expect(result.issues == [SSHConfigDiscoveryIssue(
+        kind: .fileTooLarge,
+        sourcePath: config.path
+    )])
+}
+
 @Test func discoversEqualsSeparatedHostAndIncludeDirectives() throws {
     let root = try temporarySSHDirectory()
     defer { try? FileManager.default.removeItem(at: root) }

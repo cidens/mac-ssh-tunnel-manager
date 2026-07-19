@@ -35,7 +35,9 @@
 
 首次保存远程转发配置前，应用可能在同一目录创建 `tunnels.json.pre-remote-forward.bak`。该文件是旧隧道配置的本地恢复副本，包含与 `tunnels.json` 相同类型的信息，不会上传。
 
-用户执行 JSON 配置导入时，应用会在同一目录创建或更新 `tunnels.json.pre-import.bak`，用于保存失败后的本地恢复。用户主动导出的 JSON 文件由用户选择保存位置，可能包含隧道名称、Host、地址、端口、URL、标签、收藏、顺序和自动重连设置；应用不会自动上传、同步或加密该文件。导出文件不包含密码、私钥、token、ssh-agent/Keychain 凭据、运行进程、原始 stderr、错误历史或临时风险确认。
+用户执行 JSON 配置导入时，应用会在同一目录创建或更新 `tunnels.json.pre-import.bak`，用于保存失败后的本地恢复。用户主动导出的 JSON 文件由用户选择保存位置，可能包含连接组名称、Host、规则地址、端口、URL、标签、收藏、顺序、自动化设置和规则风险确认签名；应用不会自动上传、同步或加密该文件。导入时风险确认会被清除。导出文件不包含密码、私钥、token、ssh-agent/Keychain 凭据、运行进程、原始 stderr 或错误历史。
+
+旧版单端口配置首次迁移写回前，应用会创建 `tunnels.json.pre-connection-groups.bak`。该文件保留迁移前原始字节，包含与旧 `tunnels.json` 相同类型的信息，不会上传。
 
 应用不会保存：
 

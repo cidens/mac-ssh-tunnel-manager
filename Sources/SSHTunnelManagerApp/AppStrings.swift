@@ -52,31 +52,20 @@ enum AppStrings {
     }
 
     static func tunnelSummary(_ tunnel: TunnelConfig, language: String? = nil) -> String {
+        if tunnel.mode != .sshConfig {
+            return format(
+                "row.summary.connectionGroup",
+                language: language,
+                tunnel.sshHost,
+                tunnel.effectiveRules.filter(\.isEnabled).count,
+                tunnel.effectiveRules.count
+            )
+        }
         switch tunnel.mode {
-        case .localForward:
-            return format(
-                "row.summary.localForward",
-                language: language,
-                tunnel.localHost,
-                tunnel.localPort,
-                tunnel.sshHost,
-                tunnel.remoteHost,
-                tunnel.remotePort
-            )
-        case .remoteForward:
-            return format(
-                "row.summary.remoteForward",
-                language: language,
-                tunnel.sshHost,
-                tunnel.remoteHost,
-                tunnel.remotePort,
-                tunnel.localHost,
-                tunnel.localPort
-            )
-        case .dynamicForward:
-            return format("row.summary.dynamicForward", language: language, tunnel.localHost, tunnel.localPort, tunnel.sshHost)
         case .sshConfig:
             return format("row.summary.sshConfig", language: language, tunnel.sshConfigName ?? "")
+        case .localForward, .remoteForward, .dynamicForward:
+            preconditionFailure("Connection groups are handled before the mode switch")
         }
     }
 
@@ -278,10 +267,6 @@ enum AppStrings {
 
     static func diagnosticNone(language: String? = nil) -> String {
         string("diagnostic.none", language: language)
-    }
-
-    static func done(language: String? = nil) -> String {
-        string("button.done", language: language)
     }
 
     static func close(language: String? = nil) -> String {
@@ -531,10 +516,6 @@ enum AppStrings {
         string("button.addTunnel", language: language)
     }
 
-    static func collapseAddForm(language: String? = nil) -> String {
-        string("button.collapseAddForm", language: language)
-    }
-
     static func quit(language: String? = nil) -> String {
         string("button.quit", language: language)
     }
@@ -557,10 +538,6 @@ enum AppStrings {
 
     static func edit(language: String? = nil) -> String {
         string("button.edit", language: language)
-    }
-
-    static func collapseEdit(language: String? = nil) -> String {
-        string("button.collapseEdit", language: language)
     }
 
     static func deleteTunnelHelp(language: String? = nil) -> String {
@@ -613,6 +590,7 @@ enum AppStrings {
     static func configurationImportSaveFailed(_ detail: String, language: String? = nil) -> String { format("configuration.import.saveFailed", language: language, detail) }
     static func configurationImportRestoreFailed(_ detail: String, language: String? = nil) -> String { format("configuration.import.restoreFailed", language: language, detail) }
     static func configurationDuplicateIdentifier(_ id: String, language: String? = nil) -> String { format("configuration.import.issue.duplicateID", language: language, id) }
+    static func configurationDuplicateName(_ name: String, language: String? = nil) -> String { format("configuration.import.issue.duplicateName", language: language, name) }
     static func configurationPortConflict(_ host: String, _ port: Int, language: String? = nil) -> String { format("configuration.import.issue.portConflict", language: language, host, port) }
     static func configurationExposureWarning(_ host: String, _ port: Int, language: String? = nil) -> String { format("configuration.import.issue.exposure", language: language, host, port) }
 

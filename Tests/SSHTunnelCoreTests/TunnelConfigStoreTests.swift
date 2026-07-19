@@ -2,6 +2,17 @@ import Foundation
 import Testing
 @testable import SSHTunnelCore
 
+@Test func storeRejectsOversizedPersistedConfigurationBeforeDecoding() throws {
+    let directory = try temporaryDirectory()
+    let configURL = directory.appending(path: "tunnels.json")
+    let oversized = Data(repeating: 0x20, count: TunnelConfigurationTransfer.maximumFileSize + 1)
+    try oversized.write(to: configURL)
+
+    #expect(throws: TunnelConfigurationTransferError.self) {
+        _ = try TunnelConfigStore(configURL: configURL).load()
+    }
+}
+
 @Test func storeLoadsEmptyListWhenConfigFileDoesNotExist() throws {
     let directory = try temporaryDirectory()
     let store = TunnelConfigStore(configURL: directory.appending(path: "tunnels.json"))
@@ -133,6 +144,32 @@ import Testing
     #expect(tunnels.first?.manualOrder == nil)
     #expect(tunnels.first?.isAutoReconnectEnabled == false)
     #expect(tunnels.first?.isAutoStartEnabled == false)
+    #expect(tunnels.first?.rules.count == 1)
+    #expect(tunnels.first?.rules.first?.id == tunnels.first?.id)
+}
+
+@Test func firstConnectionGroupWriteBacksUpLegacyBytesAndWritesRules() throws {
+    let directory = try temporaryDirectory()
+    let configURL = directory.appending(path: "tunnels.json")
+    let store = TunnelConfigStore(configURL: configURL)
+    let legacyData = Data(#"[{"id":"00000000-0000-0000-0000-000000000081","name":"Legacy","sshHost":"host","localHost":"127.0.0.1","localPort":15432,"remoteHost":"db","remotePort":5432,"tags":["db"],"isFavorite":true,"manualOrder":2,"isAutoReconnectEnabled":true,"isAutoStartEnabled":true}]"#.utf8)
+    try legacyData.write(to: configURL)
+    let loaded = try store.load()
+
+    try store.save(loaded)
+
+    #expect(try Data(contentsOf: store.preConnectionGroupBackupURL) == legacyData)
+    #expect(try permissions(of: store.preConnectionGroupBackupURL) == 0o600)
+    let savedText = try #require(String(data: Data(contentsOf: configURL), encoding: .utf8))
+    #expect(savedText.contains("\"rules\""))
+    let migrated = try #require(try store.load().first)
+    #expect(migrated.id == loaded.first?.id)
+    #expect(migrated.name == "Legacy")
+    #expect(migrated.tags == ["db"])
+    #expect(migrated.isFavorite)
+    #expect(migrated.manualOrder == 2)
+    #expect(migrated.isAutoReconnectEnabled)
+    #expect(migrated.isAutoStartEnabled)
 }
 
 @Test func normalizesTagsByTrimmingAndCaseInsensitiveDeduplication() throws {

@@ -6,7 +6,7 @@ English | [中文](architecture.md)
 
 `mac-ssh-tunnel-manager` is the public repository name. The app name is `SSH Tunnel Manager`; the SwiftPM executable target remains `ssh-tunnel-manager`. It is a personal macOS menu bar app for managing SSH local port forwarding, remote port forwarding, and dynamic SOCKS tunnels. It does not implement the SSH protocol and does not store server passwords or private keys. Instead, it starts the system `/usr/bin/ssh` binary directly and reuses the user's existing `~/.ssh/config`, ssh-agent, and macOS Keychain behavior.
 
-Current version: `0.3.2`. The version is defined in `SSHTunnelCore/AppVersion.swift`.
+Current version: `0.4.0`. The version is defined in `SSHTunnelCore/AppVersion.swift`.
 
 ## Module Layout
 
@@ -42,7 +42,7 @@ Key file responsibilities:
 - `ConnectionNotificationController.swift`: requests permission only after opt-in and isolates permission, delivery, and persistence failures from tunnel lifecycle state.
 - `SSHConfigImportController.swift` and `SSHConfigImportView.swift`: discovery, manual aliases, preview confirmation, duplicate handling, risk warnings, and batch import UI.
 - `AppStrings.swift`: App-layer localization entry point for menu text, buttons, forms, help text, and app-generated errors; packaged apps load SwiftPM resource bundles from `Contents/Resources`, while development and tests fall back to `Bundle.module`.
-- `TunnelMenuView.swift`: menu bar UI for adding, editing, starting, stopping, opening URLs, and deleting tunnels.
+- `TunnelMenuView.swift`: menu bar UI for search, filtering, sorting, start, stop, opening URLs, and deletion. Add and Edit use a dedicated `TunnelEditorView` sheet, so main-list cards do not own form drafts.
 - `TunnelModeFormFields.swift`: centralizes which form fields each tunnel mode should display.
 - `scripts/build-app-bundle.sh`: builds the SwiftPM release product into a `.app`, writes `Info.plist`, and applies local ad-hoc signing.
 - `scripts/install-app.sh`: reuses the app bundle build script and installs the app to `/Applications`.
@@ -84,7 +84,7 @@ For small trusted distribution:
 The package script writes:
 
 ```text
-dist/SSH Tunnel Manager-0.3.2.zip
+dist/SSH Tunnel Manager-0.4.0.zip
 ```
 
 The zip uses local ad-hoc signing and is not notarized with an Apple Developer ID. Public distribution should add Developer ID signing and notarization later.
@@ -97,16 +97,13 @@ Tunnel definitions are stored at:
 ~/Library/Application Support/ssh-tunnel-manager/tunnels.json
 ```
 
-Each tunnel is represented by `TunnelConfig`. Core fields:
+Each connection group is represented by `TunnelConfig`. Identity, name, SSH Host, tags, favorite/manual order, last-used time, automatic reconnection, and connect-on-launch are group-level fields. `TunnelForwardRule` entries in `rules` hold mode, listener and target endpoints, URL, enabled state, and a risk-confirmation signature bound to mode, listener address, and listener port.
 
 - `id`: unique tunnel identifier.
-- `mode`: `localForward`, `remoteForward`, `dynamicForward`, or `sshConfig`.
 - `name`: display name in the UI.
-- `openURL`: optional local URL to open from the app.
-- `sshHost`, `localHost`, `localPort`, `remoteHost`, `remotePort`: used by Local Forward mode.
-- `sshHost`, `remoteHost`, `remotePort`, `localHost`, `localPort`: Remote Forward SSH Host, remote listener, and local target.
-- `sshHost`, `localHost`, `localPort`: used by Dynamic SOCKS mode.
-- `sshConfigName`: used by SSH Config mode.
+- `sshHost`: one generated connection target shared by all rules.
+- `rules`: ordered `TunnelForwardRule` values with per-rule mode, endpoints, URL, enabled state, and risk confirmation.
+- `sshConfigName`: used by SSH Config references.
 - `tags`: normalized tags, limited to 10 entries of at most 32 characters and deduplicated case-insensitively.
 - `isFavorite`: favorite state.
 - `manualOrder`: stable manual sort position.
@@ -114,9 +111,27 @@ Each tunnel is represented by `TunnelConfig`. Core fields:
 - `isAutoReconnectEnabled`: whether recoverable failures should reconnect automatically; defaults to `false` for legacy JSON.
 - `isAutoStartEnabled`: whether the tunnel should connect when the app launches; defaults to `false` for legacy JSON.
 
-Legacy JSON without a `mode` field decodes as `localForward`. Missing organization, automatic-reconnection, and automatic-connection fields use compatible defaults; when every configuration lacks `manualOrder`, the original JSON array order becomes the initial manual order.
+### Configuration types and rule enablement
+
+The app distinguishes two ownership models. A Connection Group owns one SSH Host and an ordered app-managed `rules` array; Local, Remote, and SOCKS are forwarding-rule modes, and all enabled rules share one `/usr/bin/ssh -N` process. An SSH Config Reference stores only a Host alias while the user's `~/.ssh/config` owns Host, `ProxyJump`, and forwarding directives.
+
+“Enable this rule” is a rule-level state that only controls whether the rule participates in the next SSH command. Disabled rules remain persisted and included in import and export. A group with every rule disabled can be saved but cannot start. New configurations choose a type explicitly; after saving, the editor does not allow in-place conversion between a Connection Group and SSH Config Reference. The first and subsequent forwarding rules use the same editor, validation, ordering, and deletion behavior.
+
+Legacy single-forward JSON decodes as a one-rule group while preserving the group UUID and metadata. Before the first new-model write, `TunnelConfigStore` creates `tunnels.json.pre-connection-groups.bak` with `0600` permissions. Failed persistence leaves the original file intact and the manager restores its previous in-memory array.
+
+Generated groups build one argument array containing all enabled `-L`, `-R`, and `-D` entries and one final SSH Host. `ExitOnForwardFailure=yes` makes an initial failure stop the entire group. Local listener conflicts are checked inside a group, across groups, and against external listeners before spawning SSH. Recovery generations, network/sleep handling, login startup, and process termination remain keyed by the group UUID.
+
+Configuration exports use schema v2. The importer accepts v1 single-forward documents and v2 groups, rejects newer schemas, and clears imported risk confirmations and connect-on-launch flags before preview or commit.
 
 Before the first `remoteForward` write to an existing configuration, `TunnelConfigStore` copies the original bytes to `tunnels.json.pre-remote-forward.bak` with `0600` permissions. Later saves do not overwrite this backup.
+
+## Editor Presentation
+
+Add and Edit share a dedicated `TunnelEditorView` sheet with a fixed title, an independently scrolling content area, and fixed actions. `TunnelRowView` remains a compact summary card. Connection-group rules retain stable UUID identity, one rule shows full fields at a time, and the other rules show compact endpoint summaries. A new rule is revealed only within the editor's own `ScrollViewReader`.
+
+`TunnelDraft` value comparison detects unsaved changes before dismissal. Saving still goes through the existing `TunnelManager` validation and transactional persistence path, including listener conflicts, SSH Config resolution, risky-bind confirmation, and whole-group restart confirmation. Confirmations initiated by editing are rendered within the sheet's visible layer so they cannot remain hidden behind it.
+
+Tunnel display names are normalized through `TunnelConfig.nameComparisonKey` for trimmed, case-insensitive, and diacritic-insensitive uniqueness checks at save and import boundaries. Add and Edit exclude the current UUID, batch SSH Config import checks aliases and display names, and JSON preview blocks name conflicts involving imported items without preventing legacy duplicate files from loading. Import as Copy selects the first available numeric suffix.
 
 ## Tunnel Modes
 
@@ -179,9 +194,9 @@ After starting the tunnel, callers still need to opt into the SOCKS proxy themse
 ALL_PROXY=socks5h://127.0.0.1:1080 git fetch
 ```
 
-### SSH Config
+### SSH Config Reference
 
-SSH Config mode stores only `sshConfigName`; the user's `~/.ssh/config` owns `LocalForward`, `RemoteForward`, or `DynamicForward` declarations:
+An SSH Config reference stores only `sshConfigName`; the user's `~/.ssh/config` owns `LocalForward`, `RemoteForward`, or `DynamicForward` declarations:
 
 ```bash
 /usr/bin/ssh -N \
@@ -219,7 +234,9 @@ The app only manages SSH processes that it starts. It does not search for or ter
 - `Port occupied`: no managed process, but the local port is already occupied by another process.
 - `Failed`: the managed process exited and left an error message.
 
-Remote Forward and SSH Config modes do not use local port probes, so a running process displays as `Running`. If SSH exits because forwarding failed, stderr is shown on the tunnel card.
+Remote Forward rules and SSH Config references do not use local port probes, so a running process displays as `Running`. If SSH exits because forwarding failed, stderr is shown on the tunnel card.
+
+Each local-listener refresh runs one fixed `/usr/sbin/lsof -nP -iTCP -sTCP:LISTEN` process and reuses that snapshot for every Local and SOCKS endpoint, so rule count does not multiply subprocesses. A run-requested listener that has not yet been confirmed is checked every two seconds; confirmed stable listeners and fully stopped configurations are checked every 30 seconds. Start, stop, save, import, and manual refresh still trigger an immediate check, and only one background probe can be active at a time. Results equal to the current runtime state are not written back to `@Published runtimes`, avoiding redundant SwiftUI recomputation and layout.
 
 ## Process Cleanup
 
@@ -238,9 +255,10 @@ Validation rules:
 - Local bind host still allows exact `*` for intentional LAN access, but non-loopback binds require explicit confirmation before saving or starting; remote host does not allow wildcards.
 - A Remote Forward listener allows exact `*`, but non-loopback listeners require confirmation; its local target does not allow wildcards.
 - `127.0.0.1`, `localhost`, `::1`, and `[::1]` are treated as loopback addresses. Other local bind values are treated as potentially exposed without DNS resolution.
-- SSH Config mode checks resolved local, remote, and dynamic listener addresses and applies the corresponding confirmation.
-- `openURL` accepts only `http` or `https` URLs with a host.
+- SSH Config references check resolved local, remote, and dynamic listener addresses and apply the corresponding confirmation.
+- `openURL` accepts only `http` or `https` URLs with a host at input, import, and the final system-open boundary.
 - Ports must be in `1...65535`.
+- Persisted configuration and each scanned SSH Config file are limited to 1 MiB before full reads and checked again after reading, preventing unbounded memory use from abnormal local files.
 
 ## Error Handling
 
@@ -251,7 +269,7 @@ Common errors include:
 - Local port already occupied.
 - SSH Host does not exist.
 - Authentication failed or requires interactive approval.
-- SSH Config mode has no local, remote, or dynamic forwarding directive.
+- An SSH Config reference has no local, remote, or dynamic forwarding directive.
 - `ExitOnForwardFailure=yes` makes SSH exit when forwarding fails.
 
 Errors are shown under the affected tunnel card.
@@ -279,7 +297,8 @@ Runtime details retain only a sanitized summary, status-change time, exit code, 
 `Tests/SSHTunnelCoreTests` covers core logic:
 
 - JSON persistence and legacy configuration compatibility.
-- Command generation for Local Forward, Remote Forward, Dynamic SOCKS, and SSH Config modes.
+- One combined command for Local Forward, Remote Forward, and Dynamic SOCKS rules, plus SSH Config reference command generation.
+- Rule enablement filtering, stable order, save-versus-start validation, and one process argument array per connection group.
 - Host, port, and URL validation.
 - SSH Config Include discovery, cycle limits, source immutability, and `Match exec` detection.
 - `localforward`, `remoteforward`, and `dynamicforward` parsing and exposure classification from `ssh -G` output.
@@ -296,9 +315,9 @@ Runtime details retain only a sanitized summary, status-change time, exit code, 
 
 `Tests/SSHTunnelManagerAppTests` covers App-layer logic that can be separated from SwiftUI rendering:
 
-- Local Forward shows SSH Host, local, and remote fields, but not SSH Config fields.
-- Dynamic SOCKS shows only SSH Host and SOCKS local listener fields, not remote or SSH Config fields.
-- SSH Config shows only the config alias field.
+- New configurations choose a Connection Group or SSH Config Reference; persisted configurations cannot change type.
+- Connection Group rule cards consistently expose Local, Remote, or SOCKS fields and “Enable this rule”.
+- SSH Config references show only the config alias field and no app-managed rule controls.
 - Representative App-layer UI text and runtime errors in English and Simplified Chinese.
 - Matching key sets across English and Simplified Chinese `.strings` files for both App and Core layers.
 - SSH Config confirmation gating, three forwarding previews, case-insensitive duplicate handling, batch persistence, and rollback.
@@ -318,7 +337,7 @@ Recommended manual flow:
 6. Stop the tunnel and confirm the app only stops SSH processes it started.
 7. Open Import SSH Config and confirm explicit Hosts are discovered, existing aliases cannot be selected again, wildcard Hosts accept a concrete alias manually, and previews show forwarding type and listener exposure.
 8. If the configuration contains `Match exec`, cancel the first warning and confirm no preview runs, then approve it. After import, confirm source hashes are unchanged, no connection starts, and automatic reconnection remains disabled.
-9. Add an SSH Config tunnel and confirm nonexistent aliases or aliases without any forwarding directive are rejected. Start a valid entry and confirm `openURL` works.
+9. Add an SSH Config reference and confirm nonexistent aliases or aliases without any forwarding directive are rejected. Start a valid entry and confirm `openURL` works.
 10. Edit a tunnel and confirm the JSON file updates. Start deleting it and cancel to confirm the configuration remains, then confirm deletion and verify it is removed from the JSON file.
 11. Launch the app with English and Simplified Chinese system languages and confirm menus, forms, buttons, status summaries, and app-generated errors follow the system language.
 12. Enable automatic reconnection for a sanitized test tunnel, interrupt a recoverable connection, and confirm the 2, 5, 10, 30, and 60 second sequence without a tight retry loop.
@@ -335,6 +354,7 @@ Recommended manual flow:
 The current version intentionally stays small:
 
 - macOS only.
-- Each manual configuration contains one Local Forward, Remote Forward, or Dynamic SOCKS rule. An SSH Config reference runs every forwarding directive resolved for that Host but does not expose per-directive editing in the app.
+- Each connection group contains one or more Local Forward, Remote Forward, or Dynamic SOCKS rules for one SSH Host and one managed SSH process. Rules cannot use separate SSH Hosts or independent runtime state.
+- An SSH Config reference runs every forwarding directive resolved for that Host but does not expose per-directive editing or in-place conversion to a connection group.
 - Does not edit `~/.ssh/config`.
 - Does not run arbitrary remote probes to verify Remote Forward listeners or support remote port `0`.

@@ -248,6 +248,8 @@ struct ConfigurationTransferView: View {
         switch issue {
         case .duplicateIdentifier(let id):
             return AppStrings.configurationDuplicateIdentifier(id.uuidString)
+        case .duplicateName(let name):
+            return AppStrings.configurationDuplicateName(name)
         case .localEndpointConflict(let host, let port):
             return AppStrings.configurationPortConflict(host, port)
         case .exposedListener(let host, let port):

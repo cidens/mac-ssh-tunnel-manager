@@ -16,17 +16,49 @@ import Testing
     let document = try transfer.decode(data)
     let json = try #require(String(data: data, encoding: .utf8))
 
-    #expect(document.schemaVersion == 1)
+    #expect(document.schemaVersion == 2)
     #expect(document.exportedAt == exportedAt)
     #expect(document.appVersion == "0.3.2")
     #expect(document.configs == [tunnel])
     #expect(json.contains("\"isAutoReconnectEnabled\" : true"))
     #expect(json.contains("\"isAutoStartEnabled\" : true"))
+    #expect(json.contains("\"rules\""))
     #expect(!json.contains("process"))
     #expect(!json.contains("stderr"))
     #expect(!json.contains("errorHistory"))
     #expect(!json.contains("credential"))
     #expect(!json.contains("riskConfirmation"))
+}
+
+@Test func importReadsSchemaOneAndMigratesSingleForwardToAGroup() throws {
+    let data = Data(#"{"schemaVersion":1,"exportedAt":"2025-06-15T15:06:40Z","appVersion":"0.3.2","configs":[{"id":"00000000-0000-0000-0000-000000000071","mode":"localForward","name":"Legacy export","sshHost":"legacy-host","localHost":"127.0.0.1","localPort":15432,"remoteHost":"db","remotePort":5432,"openURL":"http://127.0.0.1:15432","tags":["db"],"isFavorite":true,"manualOrder":3,"isAutoReconnectEnabled":true,"isAutoStartEnabled":true}]}"#.utf8)
+
+    let document = try TunnelConfigurationTransfer().decode(data)
+    let config = try #require(document.configs.first)
+
+    #expect(document.schemaVersion == 1)
+    #expect(config.id == UUID(uuidString: "00000000-0000-0000-0000-000000000071"))
+    #expect(config.name == "Legacy export")
+    #expect(config.sshHost == "legacy-host")
+    #expect(config.effectiveRules.count == 1)
+    #expect(config.effectiveRules.first?.mode == .localForward)
+    #expect(config.effectiveRules.first?.localPort == 15_432)
+}
+
+@Test func importClearsRuleRiskConfirmationAndAutomaticStart() throws {
+    var tunnel = sampleTunnel(id: UUID())
+    var rule = try #require(tunnel.rules.first)
+    rule.localHost = "*"
+    rule.riskConfirmationSignature = rule.currentRiskSignature
+    tunnel.replaceRules([rule])
+    tunnel.isAutoStartEnabled = true
+    let document = TunnelConfigurationDocument(appVersion: "0.4.0", configs: [tunnel])
+
+    let preview = TunnelConfigurationTransfer().preview(document: document, existing: [], strategy: .skip)
+    let imported = try #require(preview.mergedConfigs.first)
+
+    #expect(imported.isAutoStartEnabled == false)
+    #expect(imported.effectiveRules.first?.riskConfirmationSignature == nil)
 }
 
 @Test func importRejectsNewerSchemaWithoutProducingPreview() throws {
@@ -108,7 +140,24 @@ import Testing
     #expect(copied.copiedCount == 1)
     #expect(copied.mergedConfigs.count == 2)
     #expect(copied.mergedConfigs[1].id != id)
+    #expect(copied.mergedConfigs[1].effectiveRules.first?.id != incoming.effectiveRules.first?.id)
     #expect(copied.mergedConfigs[1].isAutoStartEnabled == false)
+    #expect(copied.mergedConfigs[1].name == "导入配置 (2)")
+}
+
+@Test func previewBlocksDuplicateNamesIgnoringCaseAndWhitespace() {
+    let existing = sampleTunnel(id: UUID(), name: "Database", localPort: 15_432)
+    let incoming = sampleTunnel(id: UUID(), name: " database ", localPort: 15_433)
+    let document = TunnelConfigurationDocument(appVersion: "0.4.0", configs: [incoming])
+
+    let preview = TunnelConfigurationTransfer().preview(
+        document: document,
+        existing: [existing],
+        strategy: .skip
+    )
+
+    #expect(!preview.canCommit)
+    #expect(preview.issues.contains(.duplicateName("Database")))
 }
 
 @Test func importedAndCopiedConfigsAppendWithoutReorderingExistingConfigs() {
