@@ -16,6 +16,7 @@ final class MenuPresentationCoordinator: NSObject {
     private let manager: TunnelManager
     private let shortcutController: GlobalShortcutController
     private let notificationController: ConnectionNotificationController
+    private let loginItemController: LoginItemController
     private let statusItem: NSStatusItem
     private let panel: MenuPanel
     private let hostingController: NSHostingController<MenuPanelRootView>
@@ -26,17 +27,20 @@ final class MenuPresentationCoordinator: NSObject {
     init(
         manager: TunnelManager,
         shortcutController: GlobalShortcutController,
-        notificationController: ConnectionNotificationController
+        notificationController: ConnectionNotificationController,
+        loginItemController: LoginItemController
     ) {
         self.manager = manager
         self.shortcutController = shortcutController
         self.notificationController = notificationController
+        self.loginItemController = loginItemController
         statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.squareLength)
         hostingController = NSHostingController(
             rootView: MenuPanelRootView(
                 manager: manager,
                 shortcutController: shortcutController,
-                notificationController: notificationController
+                notificationController: notificationController,
+                loginItemController: loginItemController
             )
         )
         panel = MenuPanel(
@@ -247,12 +251,14 @@ struct MenuPanelRootView: View {
     @ObservedObject var manager: TunnelManager
     @ObservedObject var shortcutController: GlobalShortcutController
     @ObservedObject var notificationController: ConnectionNotificationController
+    @ObservedObject var loginItemController: LoginItemController
 
     var body: some View {
         TunnelMenuView()
             .environmentObject(manager)
             .environmentObject(shortcutController)
             .environmentObject(notificationController)
+            .environmentObject(loginItemController)
             .frame(width: 460)
             .frame(maxHeight: .infinity, alignment: .top)
             .background(.regularMaterial)

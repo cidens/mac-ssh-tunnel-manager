@@ -367,6 +367,7 @@ import SSHTunnelCore
     #expect(imported)
     #expect(manager.tunnels.map(\.sshConfigName) == ["existing-service", "new-service"])
     #expect(manager.tunnels.allSatisfy { !$0.isAutoReconnectEnabled })
+    #expect(manager.tunnels.allSatisfy { !$0.isAutoStartEnabled })
     #expect(manager.tunnels.allSatisfy { !manager.isManagedProcessRunning(for: $0) })
     #expect(try store.load() == manager.tunnels)
 }
@@ -385,6 +386,81 @@ import SSHTunnelCore
     #expect(!manager.importSSHConfigAliases(["new-service"]))
     #expect(manager.tunnels.isEmpty)
     #expect(!manager.addError.isEmpty)
+}
+
+@MainActor
+@Test func appLaunchStartsOnlyTunnelsWithAutomaticConnectionEnabled() throws {
+    let directory = try temporaryDirectory()
+    let store = TunnelConfigStore(configURL: directory.appending(path: "tunnels.json"))
+    var automatic = TunnelConfig(name: "Automatic", sshConfigName: "automatic", openURL: nil)
+    automatic.isAutoStartEnabled = true
+    let manual = TunnelConfig(name: "Manual", sshConfigName: "manual", openURL: nil)
+    try store.save([automatic, manual])
+    let manager = TunnelManager(
+        store: store,
+        sshConfigResolver: StubSSHConfigResolver(results: [:])
+    )
+    defer { manager.prepareForApplicationTermination() }
+
+    manager.startAutomaticallyConfiguredTunnels()
+
+    let loadedAutomatic = try #require(manager.tunnels.first { $0.id == automatic.id })
+    let loadedManual = try #require(manager.tunnels.first { $0.id == manual.id })
+    #expect(!manager.lastError(for: loadedAutomatic).isEmpty)
+    #expect(manager.lastError(for: loadedManual).isEmpty)
+    #expect(manager.status(for: loadedAutomatic) == .failed)
+    #expect(manager.status(for: loadedManual) == .stopped)
+}
+
+@MainActor
+@Test func appLaunchSkipsRiskyListenerWithoutOpeningConfirmation() throws {
+    let directory = try temporaryDirectory()
+    let store = TunnelConfigStore(configURL: directory.appending(path: "tunnels.json"))
+    var tunnel = TunnelConfig(name: "Risky", sshConfigName: "risky", openURL: nil)
+    tunnel.isAutoStartEnabled = true
+    try store.save([tunnel])
+    let manager = TunnelManager(
+        store: store,
+        sshConfigResolver: StubSSHConfigResolver(results: [
+            "risky": .resolved("localforward *:18080 127.0.0.1:8080\n")
+        ])
+    )
+    defer { manager.prepareForApplicationTermination() }
+
+    manager.startAutomaticallyConfiguredTunnels()
+
+    let loaded = try #require(manager.tunnels.first)
+    #expect(manager.riskWarning == nil)
+    #expect(manager.status(for: loaded) == .failed)
+    #expect(manager.lastError(for: loaded).contains("跳过自动连接")
+        || manager.lastError(for: loaded).contains("Automatic connection was skipped"))
+}
+
+@MainActor
+@Test func automaticConnectionFailureUsesAutoReconnectPreference() throws {
+    let directory = try temporaryDirectory()
+    let store = TunnelConfigStore(configURL: directory.appending(path: "tunnels.json"))
+    var retrying = TunnelConfig(name: "Retrying", sshConfigName: "retrying", openURL: nil)
+    retrying.isAutoStartEnabled = true
+    retrying.isAutoReconnectEnabled = true
+    var oneShot = TunnelConfig(name: "One Shot", sshConfigName: "one-shot", openURL: nil)
+    oneShot.isAutoStartEnabled = true
+    try store.save([retrying, oneShot])
+    let manager = TunnelManager(
+        store: store,
+        sshConfigResolver: StubSSHConfigResolver(results: [
+            "retrying": .timedOut,
+            "one-shot": .timedOut,
+        ])
+    )
+    defer { manager.prepareForApplicationTermination() }
+
+    manager.startAutomaticallyConfiguredTunnels()
+
+    let loadedRetrying = try #require(manager.tunnels.first { $0.id == retrying.id })
+    let loadedOneShot = try #require(manager.tunnels.first { $0.id == oneShot.id })
+    #expect(manager.status(for: loadedRetrying) == .waitingToReconnect)
+    #expect(manager.status(for: loadedOneShot) == .failed)
 }
 
 private final class StubSSHConfigResolver: SSHConfigResolving, @unchecked Sendable {

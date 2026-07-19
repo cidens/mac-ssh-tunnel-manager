@@ -76,6 +76,28 @@ import SSHTunnelCore
     #expect(store.settings == .defaultSettings)
 }
 
+@MainActor
+@Test func unavailableNotificationsDoNotCrashOrRewritePersistedPreference() async {
+    let persisted = ConnectionNotificationSettings(
+        schemaVersion: ConnectionNotificationSettings.currentSchemaVersion,
+        isEnabled: true
+    )
+    let store = NotificationMemoryStore(settings: persisted)
+    let controller = ConnectionNotificationController(
+        store: store,
+        delivery: UnavailableConnectionNotificationCenter()
+    )
+
+    await controller.start().value
+
+    #expect(controller.authorizationState == .unsupported)
+    #expect(controller.isEnabled)
+    #expect(store.settings == persisted)
+    #expect(!controller.errorMessage.isEmpty)
+    #expect(await controller.setEnabled(true) == false)
+    #expect(store.settings == persisted)
+}
+
 private final class NotificationMemoryStore: ConnectionNotificationSettingsStoring {
     var settings: ConnectionNotificationSettings?
     init(settings: ConnectionNotificationSettings?) { self.settings = settings }

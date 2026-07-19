@@ -132,6 +132,7 @@ import Testing
     #expect(tunnels.first?.isFavorite == false)
     #expect(tunnels.first?.manualOrder == nil)
     #expect(tunnels.first?.isAutoReconnectEnabled == false)
+    #expect(tunnels.first?.isAutoStartEnabled == false)
 }
 
 @Test func normalizesTagsByTrimmingAndCaseInsensitiveDeduplication() throws {
@@ -164,6 +165,7 @@ import Testing
     tunnel.manualOrder = 3
     tunnel.lastUsedAt = Date(timeIntervalSinceReferenceDate: 1_000)
     tunnel.isAutoReconnectEnabled = true
+    tunnel.isAutoStartEnabled = true
 
     try store.save([tunnel])
     #expect(try store.load() == [tunnel])

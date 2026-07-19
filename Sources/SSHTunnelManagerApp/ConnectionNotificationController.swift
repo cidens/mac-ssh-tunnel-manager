@@ -7,6 +7,7 @@ enum ConnectionNotificationAuthorizationState: Equatable {
     case authorized
     case denied
     case failed
+    case unsupported
 }
 
 enum ConnectionNotificationEvent: Equatable {
@@ -31,6 +32,13 @@ protocol ConnectionNotificationDelivering: AnyObject {
 @MainActor
 protocol ConnectionNotificationSending: AnyObject {
     func send(_ event: ConnectionNotificationEvent)
+}
+
+@MainActor
+final class UnavailableConnectionNotificationCenter: ConnectionNotificationDelivering {
+    func authorizationState() async -> ConnectionNotificationAuthorizationState { .unsupported }
+    func requestAuthorization() async throws -> Bool { false }
+    func deliver(_ event: ConnectionNotificationEvent) async throws {}
 }
 
 @MainActor
@@ -117,7 +125,9 @@ final class ConnectionNotificationController: ObservableObject, ConnectionNotifi
             guard let self else { return }
             let state = await delivery.authorizationState()
             self.authorizationState = state
-            if isEnabled, state != .authorized {
+            if state == .unsupported {
+                errorMessage = AppStrings.notificationUnavailableOutsideApp()
+            } else if isEnabled, state != .authorized {
                 isEnabled = false
                 try? store.save(.defaultSettings)
             }
@@ -127,6 +137,11 @@ final class ConnectionNotificationController: ObservableObject, ConnectionNotifi
     func setEnabled(_ enabled: Bool) async -> Bool {
         errorMessage = ""
         if enabled {
+            if await delivery.authorizationState() == .unsupported {
+                authorizationState = .unsupported
+                errorMessage = AppStrings.notificationUnavailableOutsideApp()
+                return false
+            }
             do {
                 guard try await delivery.requestAuthorization() else {
                     authorizationState = .denied

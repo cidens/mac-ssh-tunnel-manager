@@ -13,7 +13,7 @@ Current version: `0.3.2`. The version is defined in `SSHTunnelCore/AppVersion.sw
 The project uses SwiftPM. Runtime code is split into two targets:
 
 - `SSHTunnelCore`: pure logic for configuration models, JSON persistence, SSH argument generation, input validation, port-listening parsing, stderr buffering, process termination, status summaries, and version metadata.
-- `SSHTunnelManagerApp`: the macOS SwiftUI menu bar app. It owns forms, lists, buttons, status display, and the lifecycle of system SSH `Process` instances.
+- `SSHTunnelManagerApp`: the macOS SwiftUI menu bar app. It owns forms, lists, buttons, status display, login-item control, automatic connection scheduling, and the lifecycle of system SSH `Process` instances.
 
 Both runtime targets include localized resources. The app currently supports English `en` and Simplified Chinese `zh-Hans`, with `en` as the SwiftPM `defaultLocalization`. There is no in-app language switch; runtime UI follows the macOS system language, while tests can force a language through the string wrappers.
 
@@ -112,8 +112,9 @@ Each tunnel is represented by `TunnelConfig`. Core fields:
 - `manualOrder`: stable manual sort position.
 - `lastUsedAt`: most recent successful SSH process start time.
 - `isAutoReconnectEnabled`: whether recoverable failures should reconnect automatically; defaults to `false` for legacy JSON.
+- `isAutoStartEnabled`: whether the tunnel should connect when the app launches; defaults to `false` for legacy JSON.
 
-Legacy JSON without a `mode` field decodes as `localForward`. Missing organization and automatic-reconnection fields use compatible defaults; when every configuration lacks `manualOrder`, the original JSON array order becomes the initial manual order.
+Legacy JSON without a `mode` field decodes as `localForward`. Missing organization, automatic-reconnection, and automatic-connection fields use compatible defaults; when every configuration lacks `manualOrder`, the original JSON array order becomes the initial manual order.
 
 Before the first `remoteForward` write to an existing configuration, `TunnelConfigStore` copies the original bytes to `tunnels.json.pre-remote-forward.bak` with `0600` permissions. Later saves do not overwrite this backup.
 
@@ -261,6 +262,12 @@ Each runtime record owns an independent `TunnelRecoveryState`, SSH process, retr
 
 Automatic reconnection is disabled by default. When enabled, recoverable failures use 2, 5, 10, 30, and 60 second backoff intervals capped at 60 seconds; five minutes of stable operation resets the sequence. Authentication failures, host-key failures, listener conflicts, forwarding failures, and configuration errors are permanent failures. A transient `ssh -G` timeout during automatic recovery is retried at the next interval, while a manual start reports it immediately. Network loss or sleep cancels pending retry and stability tasks. Recovery waits two seconds for network stability and starts at most one replacement process. Stop advances the generation and cancels all pending work even while connecting or waiting.
 
+## Login Item And Per-Tunnel Automatic Connection
+
+Login-item state is not duplicated in a custom preference. `LoginItemController` treats `SMAppService.mainApp.status` as the source of truth. Normal internal states drive the toggle without adding a separate status row; Settings shows messages only when system approval or another user action is required. Registration and removal use only `register()` and `unregister()`. A `swift run` process is not inside an app bundle, so the controller reports that an installed `.app` is required and never attempts to claim registration success. Login launch preserves the existing `LSUIElement` menu-bar behavior; `AppDelegate` does not show the panel automatically.
+
+Per-tunnel automatic connection uses the default-disabled, legacy-compatible `TunnelConfig.isAutoStartEnabled` field. After assembling controllers, `AppDelegate` invokes `TunnelManager.startAutomaticallyConfiguredTunnels()`, which processes selected tunnels in persisted order and continues after individual failures. Automatic starts reuse the recovery state machine: a recoverable preflight failure waits to retry when automatic reconnection is enabled and otherwise fails. Risk confirmations are scoped to an active user interaction and are not valid after a fresh launch, so exposed local, remote, or SSH Config listeners are recorded as skipped failures without creating a hidden confirmation or opening the panel. Removing the global login item never changes per-tunnel selections.
+
 ## Connection Notification And Diagnostic Boundary
 
 The notification controller never participates in SSH start or stop decisions. Notifications are disabled by default, and `UNUserNotificationCenter` permission is requested only when the user enables the setting. Denial, revocation, and delivery failures update settings feedback without changing tunnel state. The notification-center delegate explicitly presents banners, Notification Center entries, and sounds while the app is in the foreground. Each runtime owns a `TunnelNotificationCycle`: the first failure emits one notification, and a process that remains alive for two seconds emits one recovery notification and ends the cycle. Exiting during that confirmation window cancels the pending recovery, so later backoff failures do not produce a notification storm. User stop, edit, delete, and app quit invalidate the run generation and reset the cycle, so their process callbacks cannot emit disconnection notifications.
@@ -279,6 +286,7 @@ Runtime details retain only a sanitized summary, status-change time, exit code, 
 - Listening-port parsing from `lsof` output.
 - Runtime status resolution.
 - Automatic-reconnection backoff and reset, stop reasons, network and sleep pauses, stale callbacks, and permanent-failure classification.
+- Automatic-connection legacy defaults, per-tunnel selection, risky-listener rejection, and the effect of automatic reconnection on preflight failure state.
 - Notification defaults and private-file permissions, permission-denial isolation, failure-cycle deduplication, error categories, and the diagnostic field allowlist.
 - English and Simplified Chinese display text for runtime statuses, summaries, and validation errors.
 - Managed process termination.
@@ -294,6 +302,7 @@ Runtime details retain only a sanitized summary, status-change time, exit code, 
 - Representative App-layer UI text and runtime errors in English and Simplified Chinese.
 - Matching key sets across English and Simplified Chinese `.strings` files for both App and Core layers.
 - SSH Config confirmation gating, three forwarding previews, case-insensitive duplicate handling, batch persistence, and rollback.
+- Login-item status mapping, registration and removal, approval-required state, explicit `swift run` unsupported feedback, and error-state preservation.
 
 SwiftUI rendering and system `Process` lifecycle are mainly validated by compilation, core tests, and manual acceptance testing.
 
@@ -316,6 +325,10 @@ Recommended manual flow:
 13. Stop while Connecting, Waiting for Network, and Waiting to Retry, and confirm the tunnel remains stopped.
 14. Disconnect the network or sleep the Mac while an enabled tunnel is running; after recovery, confirm it waits two seconds and starts only one replacement process.
 15. Trigger authentication, host-key, and local-port-conflict failures and confirm they remain failed without automatic retries and expose only sanitized diagnostics.
+16. From an installed `.app`, enable Launch at Login and confirm the toggle remains enabled after reopening Settings or that approval is explicitly required; disable it and confirm the toggle remains disabled.
+17. Run from `swift run`, open Settings, and confirm login items are reported unavailable outside an installed `.app` without false success.
+18. Select Connect When the App Starts for one sanitized tunnel but not another, restart, and confirm only the selected tunnel starts. Disable the global login item and confirm per-tunnel selections remain.
+19. Select multiple automatic tunnels, make one fail, and confirm later tunnels still start. Confirm an exposed listener is skipped without opening the main panel.
 
 ## Current Boundaries
 
@@ -324,5 +337,4 @@ The current version intentionally stays small:
 - macOS only.
 - Each manual configuration contains one Local Forward, Remote Forward, or Dynamic SOCKS rule. An SSH Config reference runs every forwarding directive resolved for that Host but does not expose per-directive editing in the app.
 - Does not edit `~/.ssh/config`.
-- Does not install a login item.
 - Does not run arbitrary remote probes to verify Remote Forward listeners or support remote port `0`.

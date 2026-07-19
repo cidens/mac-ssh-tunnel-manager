@@ -9,9 +9,11 @@ struct GlobalShortcutSettingsView: View {
 
     @EnvironmentObject private var controller: GlobalShortcutController
     @EnvironmentObject private var notificationController: ConnectionNotificationController
+    @EnvironmentObject private var loginItemController: LoginItemController
     @Environment(\.dismiss) private var dismiss
     @State private var draft = GlobalShortcutSettings.defaultSettings
     @State private var notificationDraft = ConnectionNotificationSettings.defaultSettings.isEnabled
+    @State private var loginItemDraft = false
     @State private var saveFailure: SaveFailure?
     @State private var isSaving = false
 
@@ -145,12 +147,43 @@ struct GlobalShortcutSettingsView: View {
 
             Divider()
 
+            VStack(alignment: .leading, spacing: 8) {
+                Text(AppStrings.loginItemSettingsTitle())
+                    .font(.headline)
+                Toggle(AppStrings.loginItemEnabled(), isOn: $loginItemDraft)
+                    .disabled(!loginItemController.isSupported)
+                if loginItemController.status == .requiresApproval {
+                    Text(AppStrings.loginItemStatusRequiresApproval())
+                        .font(.caption)
+                        .foregroundStyle(.orange)
+                        .fixedSize(horizontal: false, vertical: true)
+                } else if loginItemController.status == .unsupported {
+                    Text(AppStrings.loginItemStatusUnsupported())
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+                Text(AppStrings.loginItemHelp())
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+                if !loginItemController.errorMessage.isEmpty {
+                    Text(loginItemController.errorMessage)
+                        .font(.caption)
+                        .foregroundStyle(.red)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+            }
+
+            Divider()
+
             HStack {
                 Button(AppStrings.shortcutRestoreDefault()) {
                     saveFailure = nil
                     draft.isEnabled = true
                     draft.shortcut = .defaultShortcut
                     notificationDraft = ConnectionNotificationSettings.defaultSettings.isEnabled
+                    loginItemDraft = false
                 }
                 .disabled(isSaving)
                 Spacer()
@@ -171,6 +204,8 @@ struct GlobalShortcutSettingsView: View {
         .onAppear {
             draft = controller.settings
             notificationDraft = notificationController.isEnabled
+            loginItemController.refresh()
+            loginItemDraft = loginItemController.isRegistered
             saveFailure = nil
             isSaving = false
             controller.cancelRecording()
@@ -201,6 +236,7 @@ struct GlobalShortcutSettingsView: View {
         draft != controller.settings
             || controller.hasInvalidStoredSettings
             || notificationDraft != notificationController.isEnabled
+            || loginItemDraft != loginItemController.isRegistered
     }
 
     private func saveSettings() {
@@ -217,6 +253,12 @@ struct GlobalShortcutSettingsView: View {
 
         saveFailure = nil
         controller.cancelRecording()
+        if loginItemDraft != loginItemController.isRegistered {
+            guard loginItemController.setRegistered(loginItemDraft) else {
+                return
+            }
+            loginItemDraft = loginItemController.isRegistered
+        }
         isSaving = true
         Task {
             if notificationDraft != notificationController.isEnabled {
