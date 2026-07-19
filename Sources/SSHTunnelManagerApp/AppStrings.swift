@@ -284,6 +284,10 @@ enum AppStrings {
         string("button.done", language: language)
     }
 
+    static func close(language: String? = nil) -> String {
+        string("button.close", language: language)
+    }
+
     static func importSSHConfig(language: String? = nil) -> String {
         string("import.sshConfig.button", language: language)
     }
@@ -578,6 +582,39 @@ enum AppStrings {
     static func save(language: String? = nil) -> String {
         string("button.save", language: language)
     }
+
+    static func configurationTransfer(language: String? = nil) -> String { string("configuration.transfer", language: language) }
+    static func importActions(language: String? = nil) -> String { string("configuration.actions", language: language) }
+    static func configurationTransferTitle(language: String? = nil) -> String { string("configuration.transfer.title", language: language) }
+    static func configurationExportTitle(language: String? = nil) -> String { string("configuration.export.title", language: language) }
+    static func configurationImportTitle(language: String? = nil) -> String { string("configuration.import.title", language: language) }
+    static func configurationExportButton(language: String? = nil) -> String { string("configuration.export.button", language: language) }
+    static func configurationImportButton(language: String? = nil) -> String { string("configuration.import.button", language: language) }
+    static func configurationChooseFile(language: String? = nil) -> String { string("configuration.import.chooseFile", language: language) }
+    static func configurationConflictStrategy(language: String? = nil) -> String { string("configuration.import.conflictStrategy", language: language) }
+    static func configurationConflictSkip(language: String? = nil) -> String { string("configuration.import.conflict.skip", language: language) }
+    static func configurationConflictReplace(language: String? = nil) -> String { string("configuration.import.conflict.replace", language: language) }
+    static func configurationConflictCopy(language: String? = nil) -> String { string("configuration.import.conflict.copy", language: language) }
+    static func configurationImportSafetyNote(language: String? = nil) -> String { string("configuration.import.safetyNote", language: language) }
+    static func configurationExportRequiresSelection(language: String? = nil) -> String { string("configuration.export.requiresSelection", language: language) }
+    static func configurationOpeningExportPanel(language: String? = nil) -> String { string("configuration.export.openingPanel", language: language) }
+    static func configurationOpeningImportPanel(language: String? = nil) -> String { string("configuration.import.openingPanel", language: language) }
+    static func configurationImportSucceeded(language: String? = nil) -> String { string("configuration.import.succeeded", language: language) }
+    static func selectAll(language: String? = nil) -> String { string("button.selectAll", language: language) }
+    static func clearSelection(language: String? = nil) -> String { string("button.clearSelection", language: language) }
+    static func configurationExportSelection(_ selected: Int, _ total: Int, language: String? = nil) -> String { format("configuration.export.selection", language: language, selected, total) }
+    static func configurationImportSource(_ version: String, _ count: Int, language: String? = nil) -> String { format("configuration.import.source", language: language, version, count) }
+    static func configurationImportSummary(_ added: Int, _ replaced: Int, _ copied: Int, _ skipped: Int, language: String? = nil) -> String { format("configuration.import.summary", language: language, added, replaced, copied, skipped) }
+    static func configurationExportSucceeded(_ count: Int, language: String? = nil) -> String { format("configuration.export.succeeded", language: language, count) }
+    static func configurationExportFailed(_ detail: String, language: String? = nil) -> String { format("configuration.export.failed", language: language, detail) }
+    static func configurationImportFailed(_ detail: String, language: String? = nil) -> String { format("configuration.import.failed", language: language, detail) }
+    static func configurationImportHasConflicts(language: String? = nil) -> String { string("configuration.import.hasConflicts", language: language) }
+    static func configurationImportStopTunnels(language: String? = nil) -> String { string("configuration.import.stopTunnels", language: language) }
+    static func configurationImportSaveFailed(_ detail: String, language: String? = nil) -> String { format("configuration.import.saveFailed", language: language, detail) }
+    static func configurationImportRestoreFailed(_ detail: String, language: String? = nil) -> String { format("configuration.import.restoreFailed", language: language, detail) }
+    static func configurationDuplicateIdentifier(_ id: String, language: String? = nil) -> String { format("configuration.import.issue.duplicateID", language: language, id) }
+    static func configurationPortConflict(_ host: String, _ port: Int, language: String? = nil) -> String { format("configuration.import.issue.portConflict", language: language, host, port) }
+    static func configurationExposureWarning(_ host: String, _ port: Int, language: String? = nil) -> String { format("configuration.import.issue.exposure", language: language, host, port) }
 
     static func update(language: String? = nil) -> String {
         string("button.update", language: language)

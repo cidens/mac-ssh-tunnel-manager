@@ -463,6 +463,84 @@ import SSHTunnelCore
     #expect(manager.status(for: loadedOneShot) == .failed)
 }
 
+@MainActor
+@Test func configurationImportCommitsWithoutStartingSSHAndDisablesAutomaticStart() throws {
+    let directory = try temporaryDirectory()
+    let store = TunnelConfigStore(configURL: directory.appending(path: "tunnels.json"))
+    let resolver = StubSSHConfigResolver(results: [:])
+    let manager = TunnelManager(store: store, sshConfigResolver: resolver)
+    defer { manager.prepareForApplicationTermination() }
+    var imported = TunnelConfig(name: "Imported", sshConfigName: "imported-service", openURL: nil)
+    imported.isAutoStartEnabled = true
+    imported.isAutoReconnectEnabled = true
+    let document = TunnelConfigurationDocument(appVersion: "0.3.2", configs: [imported])
+    let preview = manager.previewConfigurationImport(document, strategy: .skip)
+
+    #expect(manager.commitConfigurationImport(preview))
+    let stored = try #require(manager.tunnels.first)
+    #expect(stored.isAutoStartEnabled == false)
+    #expect(stored.isAutoReconnectEnabled == true)
+    #expect(manager.status(for: stored) == .stopped)
+    #expect(!manager.isManagedProcessRunning(for: stored))
+    #expect(resolver.requestedNames.isEmpty)
+    #expect(try store.load() == manager.tunnels)
+}
+
+@MainActor
+@Test func configurationImportInjectedSaveFailureRestoresFileAndMemory() throws {
+    struct InjectedFailure: Error {}
+
+    let directory = try temporaryDirectory()
+    let store = TunnelConfigStore(configURL: directory.appending(path: "tunnels.json"))
+    let original = TunnelConfig(name: "Original", sshConfigName: "original", openURL: nil)
+    try store.save([original])
+    let originalData = try Data(contentsOf: store.configURL)
+    let manager = TunnelManager(
+        store: store,
+        sshConfigResolver: StubSSHConfigResolver(results: [:])
+    )
+    defer { manager.prepareForApplicationTermination() }
+    let previousMemory = manager.tunnels
+    let imported = TunnelConfig(name: "Imported", sshConfigName: "imported", openURL: nil)
+    let document = TunnelConfigurationDocument(appVersion: "0.3.2", configs: [imported])
+    let preview = manager.previewConfigurationImport(document, strategy: .skip)
+
+    let committed = manager.commitConfigurationImport(preview) {
+        throw InjectedFailure()
+    }
+
+    #expect(!committed)
+    #expect(manager.tunnels == previousMemory)
+    #expect(try Data(contentsOf: store.configURL) == originalData)
+    #expect(try store.load() == [original])
+    #expect(FileManager.default.fileExists(atPath: store.preImportBackupURL.path))
+}
+
+@MainActor
+@Test func configurationImportFailureWithoutOriginalFileLeavesNoConfigFile() throws {
+    struct InjectedFailure: Error {}
+
+    let directory = try temporaryDirectory()
+    let store = TunnelConfigStore(configURL: directory.appending(path: "tunnels.json"))
+    let manager = TunnelManager(
+        store: store,
+        sshConfigResolver: StubSSHConfigResolver(results: [:])
+    )
+    defer { manager.prepareForApplicationTermination() }
+    let imported = TunnelConfig(name: "Imported", sshConfigName: "imported", openURL: nil)
+    let document = TunnelConfigurationDocument(appVersion: "0.3.2", configs: [imported])
+    let preview = manager.previewConfigurationImport(document, strategy: .skip)
+
+    let committed = manager.commitConfigurationImport(preview) {
+        try Data("partial".utf8).write(to: store.configURL)
+        throw InjectedFailure()
+    }
+
+    #expect(!committed)
+    #expect(manager.tunnels.isEmpty)
+    #expect(!FileManager.default.fileExists(atPath: store.configURL.path))
+}
+
 private final class StubSSHConfigResolver: SSHConfigResolving, @unchecked Sendable {
     private let results: [String: SSHConfigResolution]
     private(set) var requestedNames: [String] = []

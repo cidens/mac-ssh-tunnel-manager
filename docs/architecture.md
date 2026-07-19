@@ -28,6 +28,7 @@
 - `CoreStrings.swift`：Core 层本地化入口，负责状态摘要、运行状态和校验错误文案。
 - `SSHCommandBuilder.swift`：根据配置生成固定 SSH 参数，不经过 shell 字符串拼接。
 - `TunnelConfigStore.swift`：把隧道配置读写到本机 JSON 文件。
+- `TunnelConfigurationTransfer.swift`：定义带版本的导出文档、导入限制、字段校验、监听冲突检查和相同 ID 合并策略。
 - `TunnelRecoveryPolicy.swift`：定义连接生命周期、停止原因、运行代次、退避策略和 SSH 故障分类。
 - `TunnelDiagnosticSanitizer.swift`：在保存或展示诊断前替换 SSH Host、非回环目标和用户主目录。
 - `TunnelDiagnostics.swift`：定义稳定错误类别、通知周期去重状态和不含配置端点的结构化诊断报告。
@@ -44,6 +45,7 @@
 - `ConnectionNotificationController.swift`：只在用户启用时请求通知权限，并隔离权限、投递和设置失败，不影响隧道生命周期。
 - `LoginItemController.swift`：通过 `SMAppService.mainApp` 注册或注销 macOS 登录项，并以系统实际状态驱动设置开关；界面只展示需要用户处理的异常，非 `.app` 运行模式明确标记为不支持。
 - `SSHConfigImportController.swift`、`SSHConfigImportView.swift`：管理发现、手工别名、预览确认、去重、风险提示和批量导入界面。
+- `ConfigurationTransferView.swift`：提供逐条导出选择、原生 JSON 文件选择、导入预览、冲突策略和提交结果。
 - `AppDelegate.swift`：组装单一 `TunnelManager`、菜单展示、登录项和全局快捷键生命周期，并在应用启动后调度逐连接自动启动。
 - `MenuPresentationCoordinator.swift`：创建状态栏项目和可编程控制的主界面面板。
 - `GlobalShortcutSystem.swift`：封装 macOS 快捷键注册、注销、事件回调和系统快捷键查询。
@@ -125,6 +127,12 @@ zip 包使用本机 ad-hoc 签名，不包含 Apple Developer ID notarization，
 旧版 JSON 没有 `mode` 字段时，默认按 `localForward` 解码。没有标签、收藏、手工顺序、最近使用时间、自动重连和自动连接字段时使用兼容默认值；所有配置均缺少 `manualOrder` 时，按原 JSON 数组顺序建立初始手工顺序。
 
 首次把 `remoteForward` 写入已有配置前，`TunnelConfigStore` 会把原始 `tunnels.json` 一次性复制为 `tunnels.json.pre-remote-forward.bak`，权限收紧为 `0600`。备份保留原始字节且不会被后续保存覆盖；降级时退出应用并用该文件替换 `tunnels.json` 即可恢复旧版可读配置。
+
+配置导出使用 `TunnelConfigurationDocument`，当前 `schemaVersion` 为 `1`，顶层字段为 `schemaVersion`、`exportedAt`、`appVersion` 和 `configs`。导出只接受持久化的 `TunnelConfig`，因此运行进程、stderr、错误历史、凭据和交互期风险确认不会进入文档。
+
+导入文件上限为 1 MiB、配置上限为 1000 条。解析后先在内存中完成格式版本、必填字段、Host、端口、HTTP/HTTPS URL、标签、重复 UUID、本地监听冲突和暴露监听检查。高于当前版本的格式直接拒绝。相同 UUID 支持跳过、替换和作为副本三种策略，默认跳过；副本生成新 UUID。所有实际导入项强制把 `isAutoStartEnabled` 设为 `false`、把 `lastUsedAt` 置空，自动重连等其他持久化设置保持导出值。
+
+预览阶段只处理数据，不解析 SSH Config、不启动进程、不打开 URL，也不访问登录项或通知权限。提交要求当前没有运行或等待恢复的隧道；`TunnelConfigStore` 先把当前文件原子备份为 `tunnels.json.pre-import.bak` 并收紧为 `0600`，再原子保存合并结果。任何提交错误都会恢复导入前文件和 `TunnelManager` 内存数组。
 
 ## 配置组织与展示顺序
 

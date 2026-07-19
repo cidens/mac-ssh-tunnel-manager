@@ -46,6 +46,10 @@ import Testing
 
 @Test func notificationAndDiagnosticCopyLocalizesToEnglishAndChinese() {
     #expect(AppStrings.settingsTitle(language: "en") == "Settings")
+    #expect(AppStrings.close(language: "en") == "Close")
+    #expect(AppStrings.close(language: "zh-Hans") == "关闭")
+    #expect(AppStrings.configurationExportRequiresSelection(language: "zh-Hans").contains("至少选择一个"))
+    #expect(AppStrings.configurationOpeningExportPanel(language: "en").contains("system save window"))
     #expect(AppStrings.settingsTitle(language: "zh-Hans") == "设置")
     #expect(AppStrings.notificationSettingsTitle(language: "en") == "Connection Notifications")
     #expect(AppStrings.notificationSettingsTitle(language: "zh-Hans") == "连接通知")

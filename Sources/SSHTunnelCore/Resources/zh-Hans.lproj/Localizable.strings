@@ -25,3 +25,9 @@
 "error.sshHostContainsForwardingDirectives" = "SSH Host %@ 已经定义转发指令。请改用 SSH Config 模式，或选择不包含 LocalForward、RemoteForward、DynamicForward 的 Host。";
 "error.tooManyTags" = "最多只能添加 %d 个标签。";
 "error.tagTooLong" = "单个标签不能超过 %d 个字符。";
+"transfer.error.fileTooLarge" = "配置文件超过大小限制（最多 %d 字节）。";
+"transfer.error.unsupportedSchema" = "不支持配置格式版本 %d，未写入任何配置。";
+"transfer.error.tooManyConfigs" = "配置数量超过限制（最多 %d 个）。";
+"transfer.error.emptyAppVersion" = "导出文件缺少应用版本。";
+"transfer.error.duplicateID" = "导入文件包含重复配置 ID：%@。";
+"transfer.error.invalidConfig" = "配置“%@”无效：%@";
