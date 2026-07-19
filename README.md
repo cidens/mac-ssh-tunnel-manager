@@ -15,6 +15,7 @@
 - 启动隧道时直接调用 `/usr/bin/ssh`，不经过 shell 字符串拼接。
 - 复用系统已有的 `~/.ssh/config`、ssh-agent 和 macOS Keychain 行为。
 - 可只读发现 `~/.ssh/config` 及可访问的 `Include` 文件中的明确 Host 别名，预览后批量导入引用。
+- 支持按全部或所选范围导出 JSON 配置，并通过预览、冲突策略和导入前备份安全导入。
 - 隧道配置以 JSON 保存在本机。
 - 支持通过标签、收藏、搜索和排序快速定位隧道配置。
 - 支持为单条隧道启用自动重连，并在断网或睡眠恢复后按退避策略恢复。
@@ -110,6 +111,7 @@ swift test
 - [自动重连与网络、睡眠恢复验收记录](docs/validation-auto-reconnect.md)
 - [连接通知与诊断验收记录](docs/validation-connection-notifications.md)
 - [SSH Config 只读导入验收记录](docs/validation-ssh-config-import.md)
+- [JSON 配置导入导出验收记录](docs/validation-json-import-export.md)
 - [登录项与逐连接自动启动验收记录](docs/validation-login-auto-start.md)
 - [分发说明](docs/distribution.md)
 - [隐私说明](docs/privacy.md)
@@ -166,6 +168,19 @@ swift test
 ```text
 ~/Library/Application Support/ssh-tunnel-manager/tunnels.json.pre-remote-forward.bak
 ```
+
+## 配置导入与导出
+
+面板底部“导入”菜单中的“配置导入导出”支持：
+
+- 导出全部或逐条选择的配置为 UTF-8 JSON，包含格式版本、导出时间、应用版本和配置数组。
+- 导出标签、收藏、手工顺序及自动化设置，不导出 SSH 进程、错误历史、原始 stderr、凭据或临时风险确认。
+- 导入前在内存中检查格式版本、文件大小、配置数量、字段、端口、URL、重复 ID、本地监听冲突和可能暴露的监听地址。
+- 相同 ID 默认跳过，也可选择替换或作为副本导入；副本会生成新的 ID。
+- 所有导入项强制关闭“应用启动时连接”，并清除最近使用时间；预览和导入不会启动 SSH、打开 URL 或请求登录项、通知权限。
+- 提交前把当前配置备份为 `tunnels.json.pre-import.bak`，再原子写入；保存失败时恢复文件和界面内存。导入时如果仍有运行或等待重连的隧道，会要求先停止。
+
+高版本格式不会降级猜测：当 `schemaVersion` 大于当前支持的 `1` 时，应用拒绝导入且不写入任何配置。导出的文件可能含真实 Host、地址、端口、名称和标签，请按敏感配置文件保管。
 
 ## 配置查找与排序
 

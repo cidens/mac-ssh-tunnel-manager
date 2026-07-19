@@ -85,6 +85,7 @@ final class TunnelManager: ObservableObject {
     private let store: TunnelConfigStore
     private let sshConfigResolver: any SSHConfigResolving
     private let commandBuilder = SSHCommandBuilder()
+    private let configurationTransfer = TunnelConfigurationTransfer()
     private var refreshTimer: Timer?
     private var statusRefreshTask: Task<Void, Never>?
     private var willTerminateObserver: NSObjectProtocol?
@@ -289,6 +290,63 @@ final class TunnelManager: ObservableObject {
     var existingSSHConfigAliases: [String] {
         tunnels.compactMap { tunnel in
             tunnel.mode == .sshConfig ? tunnel.sshConfigName : nil
+        }
+    }
+
+    func exportConfigurationData(selectedIDs: Set<TunnelConfig.ID>) throws -> Data {
+        let selected = tunnels.filter { selectedIDs.contains($0.id) }
+        return try configurationTransfer.exportData(
+            configs: selected,
+            appVersion: AppVersion.current
+        )
+    }
+
+    func decodeConfigurationImport(_ data: Data) throws -> TunnelConfigurationDocument {
+        try configurationTransfer.decode(data)
+    }
+
+    func previewConfigurationImport(
+        _ document: TunnelConfigurationDocument,
+        strategy: TunnelImportConflictStrategy
+    ) -> TunnelImportPreview {
+        configurationTransfer.preview(document: document, existing: tunnels, strategy: strategy)
+    }
+
+    @discardableResult
+    func commitConfigurationImport(
+        _ preview: TunnelImportPreview,
+        beforeSave: (() throws -> Void)? = nil
+    ) -> Bool {
+        addError = ""
+        guard preview.canCommit else {
+            addError = AppStrings.configurationImportHasConflicts()
+            return false
+        }
+        guard !tunnels.contains(where: { isRunRequested(for: $0) }) else {
+            addError = AppStrings.configurationImportStopTunnels()
+            return false
+        }
+
+        let previousTunnels = tunnels
+        let hadOriginalFile = FileManager.default.fileExists(atPath: store.configURL.path)
+        do {
+            _ = try store.createPreImportBackup()
+            try beforeSave?()
+            try store.save(preview.mergedConfigs)
+            tunnels = preview.mergedConfigs
+            runtimes = runtimes.filter { id, _ in tunnels.contains(where: { $0.id == id }) }
+            refreshStatuses()
+            return true
+        } catch {
+            tunnels = previousTunnels
+            do {
+                try store.restorePreImportState(hadOriginalFile: hadOriginalFile)
+            } catch {
+                addError = AppStrings.configurationImportRestoreFailed(error.localizedDescription)
+                return false
+            }
+            addError = AppStrings.configurationImportSaveFailed(error.localizedDescription)
+            return false
         }
     }
 

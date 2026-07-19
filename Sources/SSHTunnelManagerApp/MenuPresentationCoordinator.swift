@@ -2,6 +2,15 @@ import AppKit
 import Combine
 import SwiftUI
 
+extension Notification.Name {
+    static let menuPanelModalInteractionDidBegin = Notification.Name(
+        "SSHTunnelManager.menuPanelModalInteractionDidBegin"
+    )
+    static let menuPanelModalInteractionDidEnd = Notification.Name(
+        "SSHTunnelManager.menuPanelModalInteractionDidEnd"
+    )
+}
+
 @MainActor
 final class MenuPresentationCoordinator: NSObject {
     private static let panelWidth: CGFloat = 460
@@ -23,6 +32,9 @@ final class MenuPresentationCoordinator: NSObject {
     private var managerCancellable: AnyCancellable?
     private var localMouseMonitor: Any?
     private var globalMouseMonitor: Any?
+    private var modalInteractionDepth = 0
+    private var suppressOutsideClicksUntil = Date.distantPast
+    private var modalInteractionObservers: [NSObjectProtocol] = []
 
     init(
         manager: TunnelManager,
@@ -58,6 +70,7 @@ final class MenuPresentationCoordinator: NSObject {
 
         configureStatusItem()
         configurePanel()
+        observeModalInteractions()
         observeManager()
         updateStatusItem()
     }
@@ -109,6 +122,34 @@ final class MenuPresentationCoordinator: NSObject {
         }
     }
 
+    private func observeModalInteractions() {
+        let center = NotificationCenter.default
+        modalInteractionObservers = [
+            center.addObserver(
+                forName: .menuPanelModalInteractionDidBegin,
+                object: nil,
+                queue: .main
+            ) { [weak self] _ in
+                MainActor.assumeIsolated {
+                    self?.modalInteractionDepth += 1
+                }
+            },
+            center.addObserver(
+                forName: .menuPanelModalInteractionDidEnd,
+                object: nil,
+                queue: .main
+            ) { [weak self] _ in
+                MainActor.assumeIsolated {
+                    guard let self else { return }
+                    self.modalInteractionDepth = max(0, self.modalInteractionDepth - 1)
+                    // 系统文件面板可能先回调完成，再把同一次点击送到全局监听器。
+                    // 短暂忽略该尾随事件，避免“取消”被当成新的外部点击。
+                    self.suppressOutsideClicksUntil = Date().addingTimeInterval(0.5)
+                }
+            },
+        ]
+    }
+
     private func updateStatusItem() {
         guard let button = statusItem.button else {
             return
@@ -158,8 +199,12 @@ final class MenuPresentationCoordinator: NSObject {
             guard let self else {
                 return event
             }
-            if self.panel.attachedSheet == nil,
-               !Self.isWindow(event.window, ownedBy: self.panel),
+            if Self.allowsOutsideClickClose(
+                modalInteractionDepth: self.modalInteractionDepth,
+                suppressUntil: self.suppressOutsideClicksUntil
+            ),
+               self.panel.attachedSheet == nil,
+               !Self.shouldKeepPanelOpen(for: event.window, ownedBy: self.panel),
                event.window !== self.statusItem.button?.window {
                 self.close()
             }
@@ -169,7 +214,12 @@ final class MenuPresentationCoordinator: NSObject {
             matching: [.leftMouseDown, .rightMouseDown]
         ) { [weak self] _ in
             Task { @MainActor in
-                self?.close()
+                guard let self,
+                      Self.allowsOutsideClickClose(
+                        modalInteractionDepth: self.modalInteractionDepth,
+                        suppressUntil: self.suppressOutsideClicksUntil
+                      ) else { return }
+                self.close()
             }
         }
     }
@@ -181,6 +231,20 @@ final class MenuPresentationCoordinator: NSObject {
             current = window.sheetParent ?? window.parent
         }
         return false
+    }
+
+    static func shouldKeepPanelOpen(for candidate: NSWindow?, ownedBy panel: NSPanel) -> Bool {
+        // 取消文件面板的鼠标事件到达本地监听器时，AppKit 可能已经清除了
+        // sheetParent。仍需把 NSSavePanel/NSOpenPanel 视为当前应用流程的一部分。
+        candidate is NSSavePanel || isWindow(candidate, ownedBy: panel)
+    }
+
+    static func allowsOutsideClickClose(
+        modalInteractionDepth: Int,
+        suppressUntil: Date,
+        now: Date = Date()
+    ) -> Bool {
+        modalInteractionDepth == 0 && now >= suppressUntil
     }
 
     private func stopMonitoringOutsideClicks() {

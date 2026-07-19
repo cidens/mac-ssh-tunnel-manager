@@ -10,6 +10,7 @@ struct TunnelMenuView: View {
     @State private var isAdding = false
     @State private var isShowingSettings = false
     @State private var isShowingSSHConfigImport = false
+    @State private var isShowingConfigurationTransfer = false
     @State private var tunnelPendingDeletion: TunnelConfig?
     @State private var searchQuery = ""
     @State private var selectedTag: String?
@@ -57,6 +58,10 @@ struct TunnelMenuView: View {
         }
         .sheet(isPresented: $isShowingSSHConfigImport) {
             SSHConfigImportView()
+                .environmentObject(manager)
+        }
+        .sheet(isPresented: $isShowingConfigurationTransfer) {
+            ConfigurationTransferView()
                 .environmentObject(manager)
         }
         .onChange(of: manager.riskWarning?.id) { _, warningID in
@@ -305,10 +310,15 @@ struct TunnelMenuView: View {
                     )
                 }
 
-                Button {
-                    isShowingSSHConfigImport = true
+                Menu {
+                    Button(AppStrings.importSSHConfig()) {
+                        isShowingSSHConfigImport = true
+                    }
+                    Button(AppStrings.configurationTransfer()) {
+                        isShowingConfigurationTransfer = true
+                    }
                 } label: {
-                    Label(AppStrings.importSSHConfig(), systemImage: "square.and.arrow.down")
+                    Label(AppStrings.importActions(), systemImage: "square.and.arrow.down")
                 }
 
                 Spacer()
