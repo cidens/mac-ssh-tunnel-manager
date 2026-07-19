@@ -23,6 +23,7 @@ let package = Package(
             resources: [.process("Resources")],
             linkerSettings: [
                 .linkedFramework("Carbon"),
+                .linkedFramework("ServiceManagement"),
                 .linkedFramework("UserNotifications")
             ]
         ),

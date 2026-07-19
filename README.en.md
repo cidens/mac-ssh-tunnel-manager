@@ -18,6 +18,7 @@ The app name is `SSH Tunnel Manager`; the SwiftPM executable target remains `ssh
 - Stores tunnel definitions as local JSON.
 - Supports tags, favorites, search, and sorting for organizing tunnel configurations.
 - Supports per-tunnel automatic reconnection with network and sleep recovery.
+- Supports the official macOS login-item service and starts only tunnels explicitly enabled for connection at app launch; both settings default to off.
 - Supports opt-in failure/recovery notifications and copyable diagnostics that omit configuration names, hosts, target ports, and raw stderr.
 - Does not store server passwords or private keys.
 - Ships with no built-in tunnel presets.
@@ -42,6 +43,14 @@ For development:
 ```bash
 swift run ssh-tunnel-manager
 ```
+
+For manual source-build validation that needs the panel immediately:
+
+```bash
+SSH_TUNNEL_MANAGER_SHOW_PANEL=1 swift run ssh-tunnel-manager
+```
+
+The environment variable affects only that process. Installed and login-item launches continue to run quietly in the menu bar.
 
 You can also open `Package.swift` in Xcode and run the `ssh-tunnel-manager` executable target.
 
@@ -97,6 +106,7 @@ swift test
 - [Automatic reconnection validation](docs/validation-auto-reconnect.md)
 - [Connection notification and diagnostics validation](docs/validation-connection-notifications.md)
 - [SSH Config read-only import validation](docs/validation-ssh-config-import.md)
+- [登录项与逐连接自动启动验收记录（中文）](docs/validation-login-auto-start.md)
 - [Changelog](CHANGELOG.en.md)
 - [Contributing](CONTRIBUTING.en.md)
 - [Code of Conduct](CODE_OF_CONDUCT.md)
@@ -127,8 +137,9 @@ Each tunnel can include these fields:
 - `manualOrder`: stable manual sort position.
 - `lastUsedAt`: time when the SSH process was most recently started successfully.
 - `isAutoReconnectEnabled`: whether recoverable failures should trigger automatic reconnection; defaults to `false` for legacy JSON.
+- `isAutoStartEnabled`: whether the tunnel should connect when the app launches; defaults to `false` for legacy JSON.
 
-Legacy JSON without organization or automatic-reconnection fields uses compatible defaults. When every configuration lacks `manualOrder`, the original JSON array order becomes the initial manual order.
+Legacy JSON without organization, automatic-reconnection, or automatic-connection fields uses compatible defaults. When every configuration lacks `manualOrder`, the original JSON array order becomes the initial manual order.
 
 Connection-notification settings are stored separately at:
 
@@ -153,6 +164,12 @@ The main panel supports combined name, tag, mode, SSH Host or SSH Config alias, 
 Automatic reconnection is configured independently for each tunnel and is disabled by default. Recoverable SSH failures retry after 2, 5, 10, 30, and 60 seconds, remaining capped at 60 seconds; five minutes of stable operation resets the sequence.
 
 Retries pause while the network is offline or the Mac is asleep. After network recovery or wake, the app waits two seconds for stability and resumes only once. Clicking Stop while connecting, waiting for the network, or waiting to retry cancels the run intent and all pending work. Authentication failures, host-key failures, listener conflicts, and configuration errors do not retry automatically. A transient `ssh -G` timeout during automatic recovery proceeds to the next backoff interval, while the same timeout during a manual start is reported immediately.
+
+## Launch At Login And Automatic Connection
+
+“Launch the app when I log in” is disabled by default. It uses the official macOS `SMAppService.mainApp` mechanism only from an installed `.app`. The toggle follows actual system state, while Settings shows text only when approval, a supported execution mode, or another user action is required. Login items are unavailable under `swift run`; the settings UI explains that an installed app is required instead of reporting false success.
+
+“Connect when the app starts” is also disabled by default for every tunnel and appears with “Reconnect after disconnecting” in the Automation section of the edit form. Manual app launches and login-item launches apply the same rule: only explicitly selected tunnels start, and the app never restores every previously running tunnel. Turning off the global login item preserves per-tunnel selections. An individual failure does not block later tunnels. A potentially exposed local or remote listener is skipped when the new process has no valid risk confirmation and must be started manually for review. Automatic preflight failures enter Waiting to Retry or Failed according to that tunnel's reconnection setting.
 
 ## Connection Notifications And Diagnostics
 

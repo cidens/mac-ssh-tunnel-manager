@@ -26,6 +26,7 @@ public struct TunnelConfig: Codable, Equatable, Identifiable, Sendable {
     public var manualOrder: Int?
     public var lastUsedAt: Date?
     public var isAutoReconnectEnabled: Bool
+    public var isAutoStartEnabled: Bool
 
     public init(
         id: UUID = UUID(),
@@ -52,6 +53,7 @@ public struct TunnelConfig: Codable, Equatable, Identifiable, Sendable {
         self.manualOrder = nil
         self.lastUsedAt = nil
         self.isAutoReconnectEnabled = false
+        self.isAutoStartEnabled = false
     }
 
     public init(
@@ -79,6 +81,7 @@ public struct TunnelConfig: Codable, Equatable, Identifiable, Sendable {
         self.manualOrder = nil
         self.lastUsedAt = nil
         self.isAutoReconnectEnabled = false
+        self.isAutoStartEnabled = false
     }
 
     public init(
@@ -104,6 +107,7 @@ public struct TunnelConfig: Codable, Equatable, Identifiable, Sendable {
         self.manualOrder = nil
         self.lastUsedAt = nil
         self.isAutoReconnectEnabled = false
+        self.isAutoStartEnabled = false
     }
 
     public init(
@@ -127,6 +131,7 @@ public struct TunnelConfig: Codable, Equatable, Identifiable, Sendable {
         self.manualOrder = nil
         self.lastUsedAt = nil
         self.isAutoReconnectEnabled = false
+        self.isAutoStartEnabled = false
     }
 
     private enum CodingKeys: String, CodingKey {
@@ -145,6 +150,7 @@ public struct TunnelConfig: Codable, Equatable, Identifiable, Sendable {
         case manualOrder
         case lastUsedAt
         case isAutoReconnectEnabled
+        case isAutoStartEnabled
     }
 
     public init(from decoder: Decoder) throws {
@@ -158,6 +164,7 @@ public struct TunnelConfig: Codable, Equatable, Identifiable, Sendable {
         manualOrder = try container.decodeIfPresent(Int.self, forKey: .manualOrder)
         lastUsedAt = try container.decodeIfPresent(Date.self, forKey: .lastUsedAt)
         isAutoReconnectEnabled = try container.decodeIfPresent(Bool.self, forKey: .isAutoReconnectEnabled) ?? false
+        isAutoStartEnabled = try container.decodeIfPresent(Bool.self, forKey: .isAutoStartEnabled) ?? false
 
         switch mode {
         case .localForward, .remoteForward:
@@ -195,6 +202,7 @@ public struct TunnelConfig: Codable, Equatable, Identifiable, Sendable {
         try container.encodeIfPresent(manualOrder, forKey: .manualOrder)
         try container.encodeIfPresent(lastUsedAt, forKey: .lastUsedAt)
         try container.encode(isAutoReconnectEnabled, forKey: .isAutoReconnectEnabled)
+        try container.encode(isAutoStartEnabled, forKey: .isAutoStartEnabled)
 
         switch mode {
         case .localForward, .remoteForward:

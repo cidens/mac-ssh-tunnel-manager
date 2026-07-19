@@ -6,14 +6,21 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var manager: TunnelManager?
     private var shortcutController: GlobalShortcutController?
     private var notificationController: ConnectionNotificationController?
+    private var loginItemController: LoginItemController?
     private var menuCoordinator: MenuPresentationCoordinator?
 
     func applicationDidFinishLaunching(_ notification: Notification) {
+        let notificationDelivery: any ConnectionNotificationDelivering = if Self.isPackagedApplication {
+            SystemConnectionNotificationCenter()
+        } else {
+            UnavailableConnectionNotificationCenter()
+        }
         let notificationController = ConnectionNotificationController(
             store: ConnectionNotificationSettingsStore(settingsURL: Self.notificationSettingsURL()),
-            delivery: SystemConnectionNotificationCenter()
+            delivery: notificationDelivery
         )
         let manager = TunnelManager(notificationSender: notificationController)
+        let loginItemController = LoginItemController()
         let registrar = CarbonGlobalShortcutRegistrar()
         let conflictChecker = CarbonSystemShortcutConflictChecker()
         let shortcutController = GlobalShortcutController(
@@ -24,7 +31,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let menuCoordinator = MenuPresentationCoordinator(
             manager: manager,
             shortcutController: shortcutController,
-            notificationController: notificationController
+            notificationController: notificationController,
+            loginItemController: loginItemController
         )
         shortcutController.setTriggerAction { [weak menuCoordinator] in
             menuCoordinator?.toggleFromGlobalShortcut()
@@ -33,9 +41,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         self.manager = manager
         self.shortcutController = shortcutController
         self.notificationController = notificationController
+        self.loginItemController = loginItemController
         self.menuCoordinator = menuCoordinator
         shortcutController.start()
-        notificationController.start()
+        if ProcessInfo.processInfo.environment["SSH_TUNNEL_MANAGER_SHOW_PANEL"] == "1" {
+            menuCoordinator.showAndFocus()
+        }
+        let notificationStartupTask = notificationController.start()
+        Task { @MainActor in
+            await notificationStartupTask.value
+            manager.startAutomaticallyConfiguredTunnels()
+        }
     }
 
     func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {
@@ -59,5 +75,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         defaultSettingsURL()
             .deletingLastPathComponent()
             .appending(path: "connection-notifications.json")
+    }
+
+    private static var isPackagedApplication: Bool {
+        Bundle.main.bundleURL.pathExtension.caseInsensitiveCompare("app") == .orderedSame
     }
 }

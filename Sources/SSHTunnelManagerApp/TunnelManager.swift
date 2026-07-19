@@ -53,6 +53,11 @@ private struct TunnelRiskConfirmationRequired: Error {
     }
 }
 
+private enum TunnelStartTrigger {
+    case manual
+    case automatic
+}
+
 private enum SSHConfigForwardingStatus {
     case hasForwarding([SSHConfigForwardingDirective])
     case missingForwarding
@@ -449,10 +454,20 @@ final class TunnelManager: ObservableObject {
     }
 
     func start(_ tunnel: TunnelConfig) {
-        start(tunnel, allowRiskyBind: false)
+        start(tunnel, allowRiskyBind: false, trigger: .manual)
     }
 
-    private func start(_ tunnel: TunnelConfig, allowRiskyBind: Bool) {
+    func startAutomaticallyConfiguredTunnels() {
+        for tunnel in tunnels where tunnel.isAutoStartEnabled {
+            start(tunnel, allowRiskyBind: false, trigger: .automatic)
+        }
+    }
+
+    private func start(
+        _ tunnel: TunnelConfig,
+        allowRiskyBind: Bool,
+        trigger: TunnelStartTrigger
+    ) {
         var runtime = runtimes[tunnel.id] ?? TunnelRuntimeState()
         guard runtime.process?.isRunning != true else { return }
         runtime.retryTask?.cancel()
@@ -479,7 +494,7 @@ final class TunnelManager: ObservableObject {
             tunnel,
             generation: generation,
             allowRiskyBind: allowRiskyBind,
-            isAutomaticRecovery: false
+            isAutomaticRecovery: trigger == .automatic
         )
     }
 
@@ -643,9 +658,19 @@ final class TunnelManager: ObservableObject {
             markTunnelUsed(tunnel.id)
             refreshStatuses()
         } catch let confirmation as TunnelRiskConfirmationRequired {
+            if isAutomaticRecovery {
+                recordLaunchFailure(
+                    AppStrings.autoStartRiskConfirmationRequired(),
+                    for: tunnel,
+                    generation: generation,
+                    retryable: false,
+                    isAutomaticRecovery: false
+                )
+                return
+            }
             stopRecoveryTasks(for: tunnel.id, reason: .userRequested, clearError: true)
             requestRiskConfirmation(title: confirmation.title, message: confirmation.message) { [weak self] in
-                self?.start(tunnel, allowRiskyBind: true)
+                self?.start(tunnel, allowRiskyBind: true, trigger: .manual)
             }
         } catch {
             let retryableValidationError = (error as? TunnelValidationError)

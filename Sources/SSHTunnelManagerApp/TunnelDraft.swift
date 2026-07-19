@@ -19,6 +19,7 @@ struct TunnelDraft {
     var openURL = ""
     var tags = ""
     var isAutoReconnectEnabled = false
+    var isAutoStartEnabled = false
 
     init() {}
 
@@ -28,6 +29,7 @@ struct TunnelDraft {
         openURL = tunnel.openURL?.absoluteString ?? ""
         tags = tunnel.tags.joined(separator: ", ")
         isAutoReconnectEnabled = tunnel.isAutoReconnectEnabled
+        isAutoStartEnabled = tunnel.isAutoStartEnabled
 
         switch tunnel.mode {
         case .localForward, .remoteForward:
@@ -58,6 +60,7 @@ struct TunnelDraft {
             )
             config.tags = normalizedTags
             config.isAutoReconnectEnabled = isAutoReconnectEnabled
+            config.isAutoStartEnabled = isAutoStartEnabled
             return config
         case .dynamicForward:
             guard let localPortNumber = Int(localPort.trimmingCharacters(in: .whitespacesAndNewlines)) else {
@@ -75,6 +78,7 @@ struct TunnelDraft {
             )
             config.tags = normalizedTags
             config.isAutoReconnectEnabled = isAutoReconnectEnabled
+            config.isAutoStartEnabled = isAutoStartEnabled
             return config
         case .remoteForward:
             guard let remotePortNumber = Int(remotePort.trimmingCharacters(in: .whitespacesAndNewlines)) else {
@@ -97,6 +101,7 @@ struct TunnelDraft {
             )
             config.tags = normalizedTags
             config.isAutoReconnectEnabled = isAutoReconnectEnabled
+            config.isAutoStartEnabled = isAutoStartEnabled
             return config
         case .localForward:
             guard let localPortNumber = Int(localPort.trimmingCharacters(in: .whitespacesAndNewlines)) else {
@@ -119,6 +124,7 @@ struct TunnelDraft {
             )
             config.tags = normalizedTags
             config.isAutoReconnectEnabled = isAutoReconnectEnabled
+            config.isAutoStartEnabled = isAutoStartEnabled
             return config
         }
     }

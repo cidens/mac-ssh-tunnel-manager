@@ -32,6 +32,16 @@ import Testing
     #expect(AppStrings.importSelectionCount(2, language: "zh-Hans") == "已选 2 项")
     #expect(AppStrings.importManualAlias(language: "zh-Hans") == "通配 Host 的具体别名（可选）")
     #expect(AppStrings.importManualAliasHelp(language: "en").contains("does not modify SSH Config"))
+    #expect(AppStrings.formAutomation(language: "en") == "Automation")
+    #expect(AppStrings.formAutomation(language: "zh-Hans") == "自动化")
+    #expect(AppStrings.formAutoStart(language: "en") == "Connect when the app starts")
+    #expect(AppStrings.formAutoStart(language: "zh-Hans") == "应用启动时连接")
+    #expect(AppStrings.formAutoReconnect(language: "en") == "Reconnect after disconnecting")
+    #expect(AppStrings.formAutoReconnect(language: "zh-Hans") == "断线后自动重连")
+    #expect(AppStrings.loginItemSettingsTitle(language: "en") == "Launch at Login")
+    #expect(AppStrings.loginItemSettingsTitle(language: "zh-Hans") == "登录时启动")
+    #expect(AppStrings.notificationUnavailableOutsideApp(language: "en").contains("swift run"))
+    #expect(AppStrings.notificationUnavailableOutsideApp(language: "zh-Hans").contains("swift run"))
 }
 
 @Test func notificationAndDiagnosticCopyLocalizesToEnglishAndChinese() {

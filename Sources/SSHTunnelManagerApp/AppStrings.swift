@@ -96,12 +96,28 @@ enum AppStrings {
         string("error.stopBeforeEditing", language: language)
     }
 
+    static func formAutomation(language: String? = nil) -> String {
+        string("form.automation", language: language)
+    }
+
     static func formAutoReconnect(language: String? = nil) -> String {
         string("form.autoReconnect", language: language)
     }
 
     static func autoReconnectHelp(language: String? = nil) -> String {
         string("form.autoReconnect.help", language: language)
+    }
+
+    static func formAutoStart(language: String? = nil) -> String {
+        string("form.autoStart", language: language)
+    }
+
+    static func autoStartHelp(language: String? = nil) -> String {
+        string("form.autoStart.help", language: language)
+    }
+
+    static func autoStartRiskConfirmationRequired(language: String? = nil) -> String {
+        string("error.autoStartRiskConfirmationRequired", language: language)
     }
 
     static func sshProcessExited(code: Int32, language: String? = nil) -> String {
@@ -162,6 +178,38 @@ enum AppStrings {
 
     static func notificationDeliveryFailed(language: String? = nil) -> String {
         string("notification.error.delivery", language: language)
+    }
+
+    static func notificationUnavailableOutsideApp(language: String? = nil) -> String {
+        string("notification.error.unsupported", language: language)
+    }
+
+    static func loginItemSettingsTitle(language: String? = nil) -> String {
+        string("loginItem.settings.title", language: language)
+    }
+
+    static func loginItemEnabled(language: String? = nil) -> String {
+        string("loginItem.enabled", language: language)
+    }
+
+    static func loginItemHelp(language: String? = nil) -> String {
+        string("loginItem.help", language: language)
+    }
+
+    static func loginItemStatusRequiresApproval(language: String? = nil) -> String {
+        string("loginItem.status.requiresApproval", language: language)
+    }
+
+    static func loginItemStatusUnsupported(language: String? = nil) -> String {
+        string("loginItem.status.unsupported", language: language)
+    }
+
+    static func loginItemUnsupported(language: String? = nil) -> String {
+        string("loginItem.error.unsupported", language: language)
+    }
+
+    static func loginItemOperationFailed(_ message: String, language: String? = nil) -> String {
+        format("loginItem.error.operation", language: language, message)
     }
 
     static func notificationFailureTitle(language: String? = nil) -> String {

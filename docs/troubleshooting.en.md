@@ -4,6 +4,29 @@
 
 This document covers common issues and diagnostic steps. Before posting public feedback, sanitize real Hosts, IPs, usernames, private-key paths, and full SSH configuration.
 
+## Launch At Login Is Unavailable Or Requires Approval
+
+Login items are supported only by an installed `SSH Tunnel Manager.app`. When running with `swift run`, Settings explicitly reports that an installed app is required. Install it first:
+
+```bash
+./scripts/install-app.sh
+```
+
+If the app says approval is required, allow `SSH Tunnel Manager` in System Settings > General > Login Items & Extensions, then reopen the app settings to confirm the toggle. The app shows a message only when user action is required; the toggle itself represents the normal enabled or disabled state.
+
+The current distribution uses ad-hoc signing. After rebuilding and replacing a development test package, macOS may identify it as a new app version; turn Launch at Login on again and save. Do not move or delete `/Applications/SSH Tunnel Manager.app` after registration.
+
+Turning off Launch at Login removes only the global login item. It preserves every tunnel's Connect When the App Starts selection.
+
+## A Selected Tunnel Does Not Connect When The App Starts
+
+Edit the tunnel and confirm Connect When the App Starts is selected in the Automation section. The app never restores every previously running tunnel; it processes only explicit per-tunnel selections.
+
+- An exposed listener is skipped during an unattended launch because it requires an active risk confirmation. Start it manually from the panel to review the warning.
+- Waiting to Retry means automatic reconnection is also enabled and a recoverable preflight check failed.
+- Failed means the preflight or connection could not continue. Check the card error or Connection Details. One failure does not block other selected tunnels.
+- Launch at Login controls whether macOS opens the app automatically. Opening the app manually applies the same per-tunnel automatic-connection rule.
+
 ## Local Port Already In Use
 
 Symptom:

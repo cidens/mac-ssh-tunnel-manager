@@ -5,6 +5,7 @@ struct TunnelMenuView: View {
     @EnvironmentObject private var manager: TunnelManager
     @EnvironmentObject private var shortcutController: GlobalShortcutController
     @EnvironmentObject private var notificationController: ConnectionNotificationController
+    @EnvironmentObject private var loginItemController: LoginItemController
     @State private var draft = TunnelDraft()
     @State private var isAdding = false
     @State private var isShowingSettings = false
@@ -52,6 +53,7 @@ struct TunnelMenuView: View {
             GlobalShortcutSettingsView()
                 .environmentObject(shortcutController)
                 .environmentObject(notificationController)
+                .environmentObject(loginItemController)
         }
         .sheet(isPresented: $isShowingSSHConfigImport) {
             SSHConfigImportView()
@@ -660,12 +662,27 @@ struct TunnelFormView: View {
                 Text(AppStrings.formTags())
                 TextField(AppStrings.placeholderTags(), text: $draft.tags)
             }
-            GridRow {
-                Text(AppStrings.formAutoReconnect())
-                Toggle("", isOn: $draft.isAutoReconnectEnabled)
-                    .toggleStyle(.switch)
-                    .labelsHidden()
-                    .help(AppStrings.autoReconnectHelp())
+            GridRow(alignment: .top) {
+                Text(AppStrings.formAutomation())
+                    .padding(.top, 2)
+                VStack(alignment: .leading, spacing: 10) {
+                    VStack(alignment: .leading, spacing: 3) {
+                        Toggle(AppStrings.formAutoStart(), isOn: $draft.isAutoStartEnabled)
+                            .toggleStyle(.checkbox)
+                        Text(AppStrings.autoStartHelp())
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                            .padding(.leading, 20)
+                    }
+                    VStack(alignment: .leading, spacing: 3) {
+                        Toggle(AppStrings.formAutoReconnect(), isOn: $draft.isAutoReconnectEnabled)
+                            .toggleStyle(.checkbox)
+                        Text(AppStrings.autoReconnectHelp())
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                            .padding(.leading, 20)
+                    }
+                }
             }
         }
         .textFieldStyle(.roundedBorder)
