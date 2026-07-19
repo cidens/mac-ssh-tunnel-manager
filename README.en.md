@@ -26,12 +26,6 @@ The app name is `SSH Tunnel Manager`; the SwiftPM executable target remains `ssh
 - Ships with no built-in tunnel presets.
 - Supports English and Simplified Chinese UI, following the macOS system language.
 
-## Screenshots
-
-![English tunnel list](docs/assets/screenshots/menu-en.png)
-
-![English add local forward form](docs/assets/screenshots/add-local-forward-en.png)
-
 ## Requirements
 
 - macOS 14 or later.
@@ -101,14 +95,23 @@ swift test
 ## Documentation
 
 - [Architecture](docs/architecture.en.md)
+- [Global shortcut requirements (Chinese)](docs/requirements-global-shortcut.md)
+- [Global shortcut design (Chinese)](docs/design-global-shortcut.md)
+- [Global shortcut validation (Chinese)](docs/validation-global-shortcut.md)
+- [Tunnel editor requirements (Chinese)](docs/requirements-tunnel-editor.md)
+- [Tunnel editor design (Chinese)](docs/design-tunnel-editor.md)
+- [Tunnel editor validation (Chinese)](docs/validation-tunnel-editor.md)
+- [Configuration organization validation (Chinese)](docs/validation-config-organization.md)
+- [Automatic reconnection validation (Chinese)](docs/validation-auto-reconnect.md)
+- [Connection notification and diagnostics validation (Chinese)](docs/validation-connection-notifications.md)
+- [SSH Config read-only import validation (Chinese)](docs/validation-ssh-config-import.md)
+- [JSON configuration import and export validation (Chinese)](docs/validation-json-import-export.md)
+- [Login item and per-tunnel auto-start validation (Chinese)](docs/validation-login-auto-start.md)
+- [Connection group validation (Chinese)](docs/validation-connection-groups.md)
 - [Distribution](docs/distribution.en.md)
 - [Privacy notes](docs/privacy.en.md)
 - [Troubleshooting](docs/troubleshooting.en.md)
 - [Release process](docs/release.en.md)
-- [Automatic reconnection validation](docs/validation-auto-reconnect.md)
-- [Connection notification and diagnostics validation](docs/validation-connection-notifications.md)
-- [SSH Config read-only import validation](docs/validation-ssh-config-import.md)
-- [登录项与逐连接自动启动验收记录（中文）](docs/validation-login-auto-start.md)
 - [Changelog](CHANGELOG.en.md)
 - [Contributing](CONTRIBUTING.en.md)
 - [Code of Conduct](CODE_OF_CONDUCT.md)

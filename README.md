@@ -26,12 +26,6 @@
 - 不内置任何默认隧道配置。
 - 界面支持英文和简体中文，默认跟随 macOS 系统语言。
 
-## 界面截图
-
-![中文隧道列表](docs/assets/screenshots/menu-zh-Hans.png)
-
-![中文添加手动转发表单](docs/assets/screenshots/add-local-forward-zh-Hans.png)
-
 ## 环境要求
 
 - macOS 14 或更高版本。
@@ -108,6 +102,9 @@ swift test
 - [全局快捷键备用入口需求](docs/requirements-global-shortcut.md)
 - [全局快捷键备用入口技术设计](docs/design-global-shortcut.md)
 - [全局快捷键备用入口验收记录](docs/validation-global-shortcut.md)
+- [隧道编辑器需求](docs/requirements-tunnel-editor.md)
+- [隧道编辑器设计](docs/design-tunnel-editor.md)
+- [隧道编辑器验收记录](docs/validation-tunnel-editor.md)
 - [配置组织功能验收记录](docs/validation-config-organization.md)
 - [自动重连与网络、睡眠恢复验收记录](docs/validation-auto-reconnect.md)
 - [连接通知与诊断验收记录](docs/validation-connection-notifications.md)

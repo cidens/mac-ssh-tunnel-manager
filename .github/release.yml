@@ -3,19 +3,19 @@ changelog:
     labels:
       - ignore-for-release
   categories:
-    - title: 新功能
+    - title: New Features
       labels:
         - enhancement
-    - title: 问题修复
+    - title: Bug Fixes
       labels:
         - bug
-    - title: 文档
+    - title: Documentation
       labels:
         - documentation
-    - title: 依赖与维护
+    - title: Dependencies and Maintenance
       labels:
         - dependencies
         - github-actions
-    - title: 其他变更
+    - title: Other Changes
       labels:
         - "*"
