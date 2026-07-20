@@ -124,9 +124,12 @@ import SSHTunnelCore
 @Test func cancellingRecommendationCancelsTheInFlightSnapshot() async throws {
     let directory = try recommendationTemporaryDirectory()
     defer { try? FileManager.default.removeItem(at: directory) }
+    let snapshotStarted = AsyncStream<Void>.makeStream()
     let manager = TunnelManager(
         store: TunnelConfigStore(configURL: directory.appending(path: "tunnels.json")),
-        localPortSnapshotProvider: CancellationAwareLocalPortSnapshotProvider()
+        localPortSnapshotProvider: CancellationAwareLocalPortSnapshotProvider {
+            snapshotStarted.continuation.yield()
+        }
     )
     let draft = recommendationDraft(port: "18080")
     let fingerprint = try #require(draft.rules[0].localPortRecommendationFingerprint)
@@ -138,7 +141,8 @@ import SSHTunnelCore
         )
     }
 
-    try await Task.sleep(for: .milliseconds(20))
+    var snapshotStartIterator = snapshotStarted.stream.makeAsyncIterator()
+    _ = await snapshotStartIterator.next()
     operation.cancel()
 
     await #expect(throws: CancellationError.self) {
@@ -258,8 +262,11 @@ private struct DelayedLocalPortSnapshotProvider: LocalPortSnapshotProviding {
 }
 
 private struct CancellationAwareLocalPortSnapshotProvider: LocalPortSnapshotProviding {
+    let onStart: @Sendable () -> Void
+
     func snapshot() throws -> String {
-        let deadline = Date().addingTimeInterval(0.5)
+        onStart()
+        let deadline = Date().addingTimeInterval(5)
         while Date() < deadline {
             guard !Task.isCancelled else { throw CancellationError() }
             Thread.sleep(forTimeInterval: 0.005)
