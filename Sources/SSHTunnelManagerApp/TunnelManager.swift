@@ -18,6 +18,7 @@ struct TunnelRuntimeState {
     var errorCategory: TunnelFailureCategory?
     var notificationCycle = TunnelNotificationCycle()
     var localPortConflict: LocalPortEndpoint?
+    var ruleHealthStates: [TunnelForwardRule.ID: RuleHealthCheckRuntimeState] = [:]
 }
 
 struct TunnelConnectionDetails {
@@ -27,6 +28,13 @@ struct TunnelConnectionDetails {
     let nextRetryAt: Date?
     let errorCategory: TunnelFailureCategory?
     let errorSummary: String
+}
+
+struct RuleHealthCheckDetails: Identifiable, Equatable {
+    let id: TunnelForwardRule.ID
+    let ruleNumber: Int
+    let kind: TunnelHealthCheckKind
+    let state: RuleHealthCheckRuntimeState
 }
 
 struct TunnelRiskWarning: Identifiable {
@@ -98,6 +106,7 @@ final class TunnelManager: ObservableObject {
     private let recoveryMonitor: SystemRecoveryMonitor
     private let notificationSender: any ConnectionNotificationSending
     private let localPortSnapshotProvider: any LocalPortSnapshotProviding
+    private let healthCheckScheduler: HealthCheckScheduler
     private var isNetworkAvailable = true
     private var isSystemSleeping = false
 
@@ -106,13 +115,19 @@ final class TunnelManager: ObservableObject {
         sshConfigResolver: any SSHConfigResolving = SystemSSHConfigResolver(),
         recoveryMonitor: SystemRecoveryMonitor = SystemRecoveryMonitor(),
         notificationSender: any ConnectionNotificationSending = DisabledConnectionNotificationSender.shared,
-        localPortSnapshotProvider: any LocalPortSnapshotProviding = SystemLocalPortSnapshotProvider()
+        localPortSnapshotProvider: any LocalPortSnapshotProviding = SystemLocalPortSnapshotProvider(),
+        healthProber: any HealthProbing = SystemHealthProber(),
+        healthSchedulerClock: HealthCheckSchedulerClock = .live
     ) {
         self.store = store
         self.sshConfigResolver = sshConfigResolver
         self.recoveryMonitor = recoveryMonitor
         self.notificationSender = notificationSender
         self.localPortSnapshotProvider = localPortSnapshotProvider
+        self.healthCheckScheduler = HealthCheckScheduler(
+            prober: healthProber,
+            clock: healthSchedulerClock
+        )
         do {
             tunnels = try store.load()
             if tunnels.allSatisfy({ $0.manualOrder == nil }) {
@@ -126,6 +141,9 @@ final class TunnelManager: ObservableObject {
             addError = AppStrings.failedToLoadTunnels(error.localizedDescription)
         }
 
+        healthCheckScheduler.onResult = { [weak self] target, result, date in
+            self?.recordHealthCheckResult(target, result: result, at: date)
+        }
         refreshStatuses()
         willTerminateObserver = NotificationCenter.default.addObserver(
             forName: NSApplication.willTerminateNotification,
@@ -201,6 +219,41 @@ final class TunnelManager: ObservableObject {
             errorCategory: runtime.errorCategory,
             errorSummary: runtime.lastError
         )
+    }
+
+    func healthAggregatePhase(for tunnel: TunnelConfig) -> TunnelHealthAggregatePhase {
+        Self.healthAggregatePhase(
+            rules: tunnel.effectiveRules,
+            states: runtimes[tunnel.id]?.ruleHealthStates ?? [:]
+        )
+    }
+
+    func healthCheckDetails(for tunnel: TunnelConfig) -> [RuleHealthCheckDetails] {
+        let states = runtimes[tunnel.id]?.ruleHealthStates ?? [:]
+        return tunnel.effectiveRules.enumerated().compactMap { index, rule in
+            guard rule.isEnabled, let healthCheck = rule.healthCheck else { return nil }
+            return RuleHealthCheckDetails(
+                id: rule.id,
+                ruleNumber: index + 1,
+                kind: healthCheck.kind,
+                state: states[rule.id] ?? RuleHealthCheckRuntimeState()
+            )
+        }
+    }
+
+    nonisolated static func healthAggregatePhase(
+        rules: [TunnelForwardRule],
+        states: [TunnelForwardRule.ID: RuleHealthCheckRuntimeState]
+    ) -> TunnelHealthAggregatePhase {
+        let configured = rules.filter { $0.isEnabled && $0.healthCheck != nil }
+        guard !configured.isEmpty else { return .notConfigured }
+        if configured.contains(where: { states[$0.id]?.phase == .unhealthy }) {
+            return .unhealthy
+        }
+        if configured.allSatisfy({ states[$0.id]?.phase == .healthy }) {
+            return .healthy
+        }
+        return .waiting
     }
 
     func copyDiagnostics(for tunnel: TunnelConfig) {
@@ -584,6 +637,7 @@ final class TunnelManager: ObservableObject {
             tunnels[index] = updatedTunnel
             runtimes[tunnel.id]?.lastError = ""
             runtimes[tunnel.id]?.localPortConflict = nil
+            runtimes[tunnel.id]?.ruleHealthStates = [:]
             do {
                 try save()
             } catch {
@@ -615,6 +669,7 @@ final class TunnelManager: ObservableObject {
         let previousTunnels = tunnels
         tunnels.removeAll { $0.id == tunnel.id }
         runtimes.removeValue(forKey: tunnel.id)
+        reconcileHealthChecks()
         do {
             try save()
         } catch {
@@ -658,6 +713,7 @@ final class TunnelManager: ObservableObject {
         runtime.localPortConflict = nil
         runtime.notificationCycle.reset()
         runtime.allowsRiskyRestart = allowRiskyBind
+        runtime.ruleHealthStates = [:]
         runtimes[tunnel.id] = runtime
 
         guard case .connecting = runtime.recovery.phase else { return }
@@ -894,7 +950,11 @@ final class TunnelManager: ObservableObject {
         runtime.errorCategory = nil
         runtime.localPortConflict = nil
         runtime.notificationCycle.reset()
-        if let process = runtime.process {
+        runtime.ruleHealthStates = [:]
+        let process = runtime.process
+        runtimes[tunnel.id] = runtime
+        reconcileHealthChecks()
+        if let process {
             ManagedProcessTerminator.terminateAndWait(
                 process,
                 timeout: 1,
@@ -1003,6 +1063,7 @@ final class TunnelManager: ObservableObject {
             runtime.errorCategory = nil
         }
         runtimes[tunnelID] = runtime
+        reconcileHealthChecks()
     }
 
     func handleNetworkAvailabilityChanged(_ available: Bool) {
@@ -1024,6 +1085,7 @@ final class TunnelManager: ObservableObject {
             runtimes[tunnel.id] = runtime
             if shouldRecover { scheduleNetworkRecovery(for: tunnel) }
         }
+        reconcileHealthChecks()
     }
 
     func handleSystemSleep() {
@@ -1042,6 +1104,7 @@ final class TunnelManager: ObservableObject {
             runtime.nextRetryAt = nil
             runtimes[tunnel.id] = runtime
         }
+        reconcileHealthChecks()
     }
 
     func handleSystemWake() {
@@ -1054,6 +1117,7 @@ final class TunnelManager: ObservableObject {
             runtimes[tunnel.id] = runtime
             if shouldRecover { scheduleNetworkRecovery(for: tunnel) }
         }
+        reconcileHealthChecks()
     }
 
     private func scheduleNetworkRecovery(for tunnel: TunnelConfig) {
@@ -1155,7 +1219,9 @@ final class TunnelManager: ObservableObject {
     }
 
     func prepareForApplicationTermination() {
+        healthCheckScheduler.updateTargets([])
         stopAllManagedTunnels(forceKillAfterTimeout: true)
+        healthCheckScheduler.shutdown()
         recoveryMonitor.stop()
         refreshTimer?.invalidate()
         statusRefreshTask?.cancel()
@@ -1198,6 +1264,101 @@ final class TunnelManager: ObservableObject {
         return true
     }
 
+    private func reconcileHealthChecks() {
+        var tunnelsByID: [TunnelConfig.ID: TunnelConfig] = [:]
+        for tunnel in tunnels where tunnelsByID[tunnel.id] == nil {
+            tunnelsByID[tunnel.id] = tunnel
+        }
+        for (tunnelID, storedRuntime) in runtimes {
+            guard let tunnel = tunnelsByID[tunnelID] else { continue }
+            let configuredRuleIDs = Set(tunnel.effectiveRules.compactMap { rule in
+                rule.isEnabled && rule.healthCheck != nil ? rule.id : nil
+            })
+            var runtime = storedRuntime
+            let filteredStates = runtime.ruleHealthStates.filter { configuredRuleIDs.contains($0.key) }
+            if runtime.ruleHealthStates != filteredStates {
+                runtime.ruleHealthStates = filteredStates
+            }
+            if !runtime.recovery.wantsToRun,
+               runtime.ruleHealthStates.values.contains(where: { $0 != RuleHealthCheckRuntimeState() }) {
+                runtime.ruleHealthStates = Dictionary(
+                    uniqueKeysWithValues: configuredRuleIDs.map { ($0, RuleHealthCheckRuntimeState()) }
+                )
+            }
+            if runtime.ruleHealthStates != storedRuntime.ruleHealthStates {
+                runtimes[tunnelID] = runtime
+            }
+        }
+
+        healthCheckScheduler.setSuspended(!isNetworkAvailable || isSystemSleeping)
+        healthCheckScheduler.updateTargets(Self.healthCheckTargets(tunnels: tunnels, runtimes: runtimes))
+    }
+
+    static func healthCheckTargets(
+        tunnels: [TunnelConfig],
+        runtimes: [TunnelConfig.ID: TunnelRuntimeState]
+    ) -> [ScheduledHealthCheckTarget] {
+        tunnels.flatMap { tunnel -> [ScheduledHealthCheckTarget] in
+            guard let runtime = runtimes[tunnel.id],
+                  runtime.recovery.wantsToRun,
+                  runtime.process?.isRunning == true,
+                  runtime.isPortListening else {
+                return []
+            }
+            return tunnel.effectiveRules.compactMap { rule in
+                makeHealthCheckTarget(for: rule, tunnelID: tunnel.id, generation: runtime.recovery.generation)
+            }
+        }
+    }
+
+    private static func makeHealthCheckTarget(
+        for rule: TunnelForwardRule,
+        tunnelID: TunnelConfig.ID,
+        generation: UInt64
+    ) -> ScheduledHealthCheckTarget? {
+        guard rule.isEnabled,
+              let configuration = rule.healthCheck,
+              rule.mode == .localForward || rule.mode == .dynamicForward else {
+            return nil
+        }
+        return ScheduledHealthCheckTarget(request: HealthProbeRequest(
+            key: RuleHealthCheckKey(tunnelID: tunnelID, ruleID: rule.id),
+            generation: generation,
+            listenerHost: rule.localHost,
+            listenerPort: rule.localPort,
+            configuration: configuration
+        ))
+    }
+
+    private func recordHealthCheckResult(
+        _ target: ScheduledHealthCheckTarget,
+        result: HealthProbeResult,
+        at date: Date
+    ) {
+        let request = target.request
+        guard isNetworkAvailable,
+              !isSystemSleeping,
+              let tunnel = tunnels.first(where: { $0.id == request.key.tunnelID }),
+              let rule = tunnel.effectiveRules.first(where: { $0.id == request.key.ruleID }),
+              let expectedTarget = Self.makeHealthCheckTarget(
+                for: rule,
+                tunnelID: tunnel.id,
+                generation: request.generation
+              ),
+              expectedTarget == target,
+              var runtime = runtimes[tunnel.id],
+              runtime.recovery.generation == request.generation,
+              runtime.recovery.wantsToRun,
+              runtime.process?.isRunning == true,
+              runtime.isPortListening else {
+            return
+        }
+        var state = runtime.ruleHealthStates[rule.id] ?? RuleHealthCheckRuntimeState()
+        state.record(result, at: date)
+        runtime.ruleHealthStates[rule.id] = state
+        runtimes[tunnel.id] = runtime
+    }
+
     func refreshStatuses() {
         scheduleNextAutomaticStatusRefresh()
         for tunnel in tunnels {
@@ -1208,6 +1369,7 @@ final class TunnelManager: ObservableObject {
             }
             runtimes[tunnel.id] = runtime
         }
+        reconcileHealthChecks()
 
         guard statusRefreshTask == nil else {
             return
@@ -1215,6 +1377,7 @@ final class TunnelManager: ObservableObject {
 
         let endpoints = Set(tunnels.flatMap(Self.localListenerEndpoints(for:)))
         guard !endpoints.isEmpty else {
+            reconcileHealthChecks()
             return
         }
 
@@ -1247,6 +1410,7 @@ final class TunnelManager: ObservableObject {
                     self.runtimes[tunnel.id] = runtime
                 }
             }
+            self.reconcileHealthChecks()
             self.scheduleNextAutomaticStatusRefresh()
         }
     }

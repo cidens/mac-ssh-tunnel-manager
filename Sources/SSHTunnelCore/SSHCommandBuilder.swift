@@ -78,6 +78,7 @@ public struct SSHCommandBuilder: Sendable {
         case .sshConfig:
             throw TunnelValidationError.invalidHost("rules")
         }
+        try rule.healthCheck?.validate(for: rule)
     }
 
     public func buildStartCommand(for tunnel: TunnelConfig) -> SSHStartCommand {

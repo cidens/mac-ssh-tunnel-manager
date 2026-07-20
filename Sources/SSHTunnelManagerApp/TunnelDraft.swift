@@ -6,6 +6,66 @@ enum TunnelConfigurationKind: String, CaseIterable, Equatable {
     case sshConfigReference
 }
 
+struct TunnelHealthCheckDraft: Equatable {
+    var isEnabled = false
+    var kind: TunnelHealthCheckKind = .tcp
+    var url = ""
+    var interval = String(Int(TunnelHealthCheckConfiguration.defaultInterval))
+    var timeout = String(Int(TunnelHealthCheckConfiguration.defaultTimeout))
+
+    init() {}
+
+    init(configuration: TunnelHealthCheckConfiguration?, mode: TunnelMode) {
+        guard let configuration else {
+            normalize(for: mode)
+            return
+        }
+        isEnabled = true
+        kind = configuration.kind
+        url = configuration.url?.absoluteString ?? ""
+        interval = Self.formatted(configuration.interval)
+        timeout = Self.formatted(configuration.timeout)
+        normalize(for: mode)
+    }
+
+    mutating func normalize(for mode: TunnelMode) {
+        switch mode {
+        case .localForward:
+            if kind == .socks5 { kind = .tcp }
+        case .dynamicForward:
+            kind = .socks5
+            url = ""
+        case .remoteForward, .sshConfig:
+            isEnabled = false
+            url = ""
+        }
+        if kind != .http { url = "" }
+    }
+
+    func makeConfiguration() throws -> TunnelHealthCheckConfiguration? {
+        guard isEnabled else { return nil }
+        guard let intervalValue = TimeInterval(interval.trimmingCharacters(in: .whitespacesAndNewlines)) else {
+            throw TunnelHealthCheckValidationError.invalidInterval
+        }
+        guard let timeoutValue = TimeInterval(timeout.trimmingCharacters(in: .whitespacesAndNewlines)) else {
+            throw TunnelHealthCheckValidationError.invalidTimeout
+        }
+        let healthURL = kind == .http
+            ? URL(string: url.trimmingCharacters(in: .whitespacesAndNewlines))
+            : nil
+        return TunnelHealthCheckConfiguration(
+            kind: kind,
+            url: healthURL,
+            interval: intervalValue,
+            timeout: timeoutValue
+        )
+    }
+
+    private static func formatted(_ value: TimeInterval) -> String {
+        value.rounded() == value ? String(Int(value)) : String(value)
+    }
+}
+
 struct TunnelRuleDraft: Identifiable, Equatable {
     var id = UUID()
     var mode: TunnelMode = .localForward {
@@ -13,6 +73,7 @@ struct TunnelRuleDraft: Identifiable, Equatable {
             if mode == .remoteForward && oldValue != .remoteForward && remoteHost.isEmpty {
                 remoteHost = "localhost"
             }
+            healthCheck.normalize(for: mode)
         }
     }
     var localHost = "127.0.0.1"
@@ -22,6 +83,7 @@ struct TunnelRuleDraft: Identifiable, Equatable {
     var openURL = ""
     var isEnabled = true
     var riskConfirmationSignature: String?
+    var healthCheck = TunnelHealthCheckDraft()
 
     var hasRequiredFields: Bool {
         guard mode != .sshConfig,
@@ -71,6 +133,7 @@ struct TunnelRuleDraft: Identifiable, Equatable {
         openURL = rule.openURL?.absoluteString ?? ""
         isEnabled = rule.isEnabled
         riskConfirmationSignature = rule.riskConfirmationSignature
+        healthCheck = TunnelHealthCheckDraft(configuration: rule.healthCheck, mode: rule.mode)
     }
 
     func makeRule() throws -> TunnelForwardRule {
@@ -96,7 +159,8 @@ struct TunnelRuleDraft: Identifiable, Equatable {
             remotePort: remotePortNumber,
             openURL: url,
             isEnabled: isEnabled,
-            riskConfirmationSignature: riskConfirmationSignature
+            riskConfirmationSignature: riskConfirmationSignature,
+            healthCheck: try healthCheck.makeConfiguration()
         )
         if !rule.hasValidRiskConfirmation {
             rule.riskConfirmationSignature = nil
@@ -145,6 +209,7 @@ struct TunnelDraft: Equatable {
     var primaryRuleID = UUID()
     var isPrimaryRuleEnabled = true
     var primaryRiskConfirmationSignature: String?
+    var primaryHealthCheck = TunnelHealthCheckDraft()
     var additionalRules: [TunnelRuleDraft] = []
 
     var configurationKind: TunnelConfigurationKind {
@@ -174,6 +239,7 @@ struct TunnelDraft: Equatable {
             primary.openURL = openURL
             primary.isEnabled = isPrimaryRuleEnabled
             primary.riskConfirmationSignature = primaryRiskConfirmationSignature
+            primary.healthCheck = primaryHealthCheck
             return [primary] + additionalRules
         }
         set {
@@ -187,6 +253,7 @@ struct TunnelDraft: Equatable {
             openURL = primary.openURL
             isPrimaryRuleEnabled = primary.isEnabled
             primaryRiskConfirmationSignature = primary.riskConfirmationSignature
+            primaryHealthCheck = primary.healthCheck
             additionalRules = Array(newValue.dropFirst())
         }
     }
@@ -248,6 +315,12 @@ struct TunnelDraft: Equatable {
             previousPort: previousPort,
             recommendedPort: port
         )
+        rule.healthCheck.url = Self.updatedOpenURL(
+            rule.healthCheck.url,
+            listenerHost: rule.localHost,
+            previousPort: previousPort,
+            recommendedPort: port
+        )
         rule.localPort = String(port)
         rule.riskConfirmationSignature = nil
         currentRules[index] = rule
@@ -269,6 +342,10 @@ struct TunnelDraft: Equatable {
             primaryRuleID = primary.id
             isPrimaryRuleEnabled = primary.isEnabled
             primaryRiskConfirmationSignature = primary.riskConfirmationSignature
+            primaryHealthCheck = TunnelHealthCheckDraft(
+                configuration: primary.healthCheck,
+                mode: primary.mode
+            )
             additionalRules = tunnel.effectiveRules.dropFirst().map(TunnelRuleDraft.init(rule:))
         }
 
@@ -378,6 +455,7 @@ struct TunnelDraft: Equatable {
         primary.id = primaryRuleID
         primary.isEnabled = isPrimaryRuleEnabled
         primary.riskConfirmationSignature = primaryRiskConfirmationSignature
+        primary.healthCheck = try primaryHealthCheck.makeConfiguration()
         if !primary.hasValidRiskConfirmation {
             primary.riskConfirmationSignature = nil
         }

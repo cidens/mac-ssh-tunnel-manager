@@ -1,7 +1,7 @@
 import Foundation
 
 public struct TunnelConfigurationDocument: Codable, Equatable, Sendable {
-    public static let currentSchemaVersion = 2
+    public static let currentSchemaVersion = 3
     public static let oldestReadableSchemaVersion = 1
 
     public let schemaVersion: Int
@@ -131,7 +131,16 @@ public struct TunnelConfigurationTransfer: Sendable {
             .contains(header.schemaVersion) else {
             throw TunnelConfigurationTransferError.unsupportedSchemaVersion(header.schemaVersion)
         }
-        let document = try decoder.decode(TunnelConfigurationDocument.self, from: data)
+        let decodedDocument = try decoder.decode(TunnelConfigurationDocument.self, from: data)
+        let configs = decodedDocument.schemaVersion < 3
+            ? decodedDocument.configs.map(Self.disablingLegacyHealthChecks(in:))
+            : decodedDocument.configs
+        let document = TunnelConfigurationDocument(
+            schemaVersion: decodedDocument.schemaVersion,
+            exportedAt: decodedDocument.exportedAt,
+            appVersion: decodedDocument.appVersion,
+            configs: configs
+        )
         guard !document.appVersion.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
             throw TunnelConfigurationTransferError.emptyAppVersion
         }
@@ -162,6 +171,16 @@ public struct TunnelConfigurationTransfer: Sendable {
             }
         }
         return document
+    }
+
+    private static func disablingLegacyHealthChecks(in config: TunnelConfig) -> TunnelConfig {
+        var migrated = config
+        migrated.replaceRules(config.effectiveRules.map { rule in
+            var migratedRule = rule
+            migratedRule.healthCheck = nil
+            return migratedRule
+        })
+        return migrated
     }
 
     public func preview(

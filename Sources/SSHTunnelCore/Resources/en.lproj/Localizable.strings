@@ -30,6 +30,13 @@
 "error.sshHostContainsForwardingDirectives" = "SSH Host %@ already defines forwarding directives. Create an SSH Config reference or choose a Host without LocalForward, RemoteForward, or DynamicForward.";
 "error.tooManyTags" = "Add no more than %d tags.";
 "error.tagTooLong" = "Each tag must be %d characters or fewer.";
+"health.error.unsupportedRuleMode" = "Health checks are available only for local forwarding and dynamic SOCKS rules.";
+"health.error.unsupportedCheckKind" = "The selected health check type is not supported by this forwarding rule.";
+"health.error.invalidURL" = "The health check URL must be an http or https URL without embedded credentials.";
+"health.error.unexpectedURL" = "Only HTTP/HTTPS health checks can contain a URL.";
+"health.error.urlDoesNotMatchListener" = "The health check URL must point to this rule’s local listener address and port.";
+"health.error.invalidInterval" = "The health check interval must be between %d and %d seconds.";
+"health.error.invalidTimeout" = "The health check timeout must be between %d and %d seconds and no longer than the interval.";
 "transfer.error.fileTooLarge" = "The configuration file exceeds the size limit (%d bytes maximum).";
 "transfer.error.unsupportedSchema" = "Configuration schema version %d is not supported. No configurations were written.";
 "transfer.error.tooManyConfigs" = "The configuration count exceeds the limit (%d maximum).";

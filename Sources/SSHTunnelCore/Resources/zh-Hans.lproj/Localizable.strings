@@ -30,6 +30,13 @@
 "error.sshHostContainsForwardingDirectives" = "SSH Host %@ 已经定义转发指令。请新建 SSH Config 引用，或选择不包含 LocalForward、RemoteForward、DynamicForward 的 Host。";
 "error.tooManyTags" = "最多只能添加 %d 个标签。";
 "error.tagTooLong" = "单个标签不能超过 %d 个字符。";
+"health.error.unsupportedRuleMode" = "健康检查仅支持本地转发和动态 SOCKS 规则。";
+"health.error.unsupportedCheckKind" = "当前转发规则不支持所选健康检查类型。";
+"health.error.invalidURL" = "健康检查 URL 必须是不含内嵌凭据的 http 或 https 地址。";
+"health.error.unexpectedURL" = "只有 HTTP/HTTPS 健康检查可以配置 URL。";
+"health.error.urlDoesNotMatchListener" = "健康检查 URL 必须指向当前规则的本地监听地址和端口。";
+"health.error.invalidInterval" = "健康检查间隔必须在 %d 到 %d 秒之间。";
+"health.error.invalidTimeout" = "健康检查超时必须在 %d 到 %d 秒之间，且不能超过检查间隔。";
 "transfer.error.fileTooLarge" = "配置文件超过大小限制（最多 %d 字节）。";
 "transfer.error.unsupportedSchema" = "不支持配置格式版本 %d，未写入任何配置。";
 "transfer.error.tooManyConfigs" = "配置数量超过限制（最多 %d 个）。";

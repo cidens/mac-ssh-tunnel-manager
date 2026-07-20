@@ -17,6 +17,7 @@ public struct TunnelForwardRule: Codable, Equatable, Identifiable, Sendable {
     public var openURL: URL?
     public var isEnabled: Bool
     public var riskConfirmationSignature: String?
+    public var healthCheck: TunnelHealthCheckConfiguration?
 
     public init(
         id: UUID = UUID(),
@@ -27,7 +28,8 @@ public struct TunnelForwardRule: Codable, Equatable, Identifiable, Sendable {
         remotePort: Int = 0,
         openURL: URL? = nil,
         isEnabled: Bool = true,
-        riskConfirmationSignature: String? = nil
+        riskConfirmationSignature: String? = nil,
+        healthCheck: TunnelHealthCheckConfiguration? = nil
     ) {
         self.id = id
         self.mode = mode
@@ -38,6 +40,7 @@ public struct TunnelForwardRule: Codable, Equatable, Identifiable, Sendable {
         self.openURL = openURL
         self.isEnabled = isEnabled
         self.riskConfirmationSignature = riskConfirmationSignature
+        self.healthCheck = healthCheck
     }
 
     public var currentRiskSignature: String {
