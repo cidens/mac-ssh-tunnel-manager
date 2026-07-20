@@ -119,12 +119,14 @@ zip 包使用本机 ad-hoc 签名，不包含 Apple Developer ID notarization，
 - `rules[].healthCheck`：可选的规则级健康检查，保存 `kind`、可选 `url`、`interval` 和 `timeout`；缺失即关闭。
 - `rules[].riskConfirmationSignature`：与模式、监听地址和端口绑定；修改监听内容后自动失效。
 - `sshConfigName`：SSH Config 引用使用。
-- `tags`：标签数组，去除首尾空白并按大小写不敏感方式判重；最多 10 个，每个最多 32 个字符。
+- `tags`：标签数组，去除首尾空白并按大小写不敏感方式判重；最多 10 个，每个最多 16 个字符。
 - `isFavorite`：收藏状态。
 - `manualOrder`：唯一稳定的手工顺序序号。
 - `lastUsedAt`：最近一次成功启动 SSH 进程的时间；尚未启动时为空。
 - `isAutoReconnectEnabled`：是否在可恢复故障后自动重连，兼容默认值为 `false`。
 - `isAutoStartEnabled`：是否在应用启动后自动连接，兼容默认值为 `false`。
+
+编辑器打开时会从现有配置聚合标签，并一次性预计算用于匹配的规范化键。输入过程中只使用最后一个逗号后的片段筛选，按前缀优先显示最多 8 个结果，匹配忽略大小写与变音符号，并排除当前已选标签。完成 10 个标签后不再提供新增建议；该功能只操作表单草稿，不改变配置结构或持久化语义。
 
 ### 配置类型与规则启用语义
 

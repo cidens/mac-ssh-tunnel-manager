@@ -62,7 +62,7 @@ public struct TunnelForwardRule: Codable, Equatable, Identifiable, Sendable {
 
 public struct TunnelConfig: Codable, Equatable, Identifiable, Sendable {
     public static let maximumTagCount = 10
-    public static let maximumTagLength = 32
+    public static let maximumTagLength = 16
 
     public static func nameComparisonKey(_ name: String) -> String {
         name.trimmingCharacters(in: .whitespacesAndNewlines)

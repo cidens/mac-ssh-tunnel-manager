@@ -104,12 +104,14 @@ Each connection group is represented by `TunnelConfig`. Identity, name, SSH Host
 - `sshHost`: one generated connection target shared by all rules.
 - `rules`: ordered `TunnelForwardRule` values with per-rule mode, endpoints, URL, enabled state, and risk confirmation.
 - `sshConfigName`: used by SSH Config references.
-- `tags`: normalized tags, limited to 10 entries of at most 32 characters and deduplicated case-insensitively.
+- `tags`: normalized tags, limited to 10 entries of at most 16 characters and deduplicated case-insensitively.
 - `isFavorite`: favorite state.
 - `manualOrder`: stable manual sort position.
 - `lastUsedAt`: most recent successful SSH process start time.
 - `isAutoReconnectEnabled`: whether recoverable failures should reconnect automatically; defaults to `false` for legacy JSON.
 - `isAutoStartEnabled`: whether the tunnel should connect when the app launches; defaults to `false` for legacy JSON.
+
+When the editor opens, it aggregates existing tags and precomputes normalized matching keys once. While typing, only the fragment after the final comma is filtered; prefix matches are prioritized, at most eight results are shown, matching ignores case and diacritics, and already selected tags are excluded. No additional suggestions are offered after ten completed tags. This behavior only updates the form draft and does not change the configuration schema or persistence semantics.
 
 ### Configuration types and rule enablement
 

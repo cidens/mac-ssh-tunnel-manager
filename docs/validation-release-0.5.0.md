@@ -4,8 +4,8 @@
 
 - 目标版本：`0.5.0`
 - 比较基线：最近一个实际公开的 Release `v0.4.0`
-- 功能范围：标签批量操作、规则级连接健康检查、本地监听端口推荐
-- 本文只记录发布准备与本机验收；尚未创建或推送 `v0.5.0` 标签，也未创建 GitHub Release
+- 功能范围：标签批量操作、已有标签建议、规则级连接健康检查、本地监听端口推荐
+- 本文记录创建 `v0.5.0` 标签前完成的发布准备与本机验收，不代表标签或 GitHub Release 已经发布
 
 ## 文档审查
 
@@ -16,7 +16,7 @@
 
 ## 自动化测试与性能
 
-执行 `swift test -c release`，260 项测试全部通过。最大规模性能测试继续覆盖 1000 个连接组、每组 10 个标签、每组最多 20 条规则以及 100 个批量成员；端口推荐、健康检查调度、标签聚合和主线程响应的 P95 均低于各自门槛。
+执行 `swift test -c release`，267 项测试全部通过。最大规模性能测试覆盖 1000 个连接组、每组 10 个标签、每组最多 20 条规则、100 个批量成员及 10,000 个唯一标签；各项 P95 均低于门槛，标签详细结果见 `validation-config-organization.md`。
 
 ## 分发包校验
 
@@ -24,13 +24,13 @@
 - `unzip -t` 通过，压缩包仅包含应用包、签名、可执行文件、`Info.plist` 和 App/Core 本地化资源。
 - `CFBundleShortVersionString` 为 `0.5.0`，开发语言为 `en`，本地化包含 `en` 与 `zh-Hans`。
 - 解压后的应用通过 `codesign --verify --deep --strict`。
-- zip SHA-256：`2fc3967ea674c0cacf61e3a7d0400cc50af0f90ee3dbb3439dc651f09a9f09fc`。
+- zip SHA-256：`530c48846a2be990af2aad2928ccd37d566aecf2552e4002a641ad9bef7daf54`。
 
 ## 安装与冒烟
 
 - 使用 `scripts/install-app.sh` 覆盖安装到 `/Applications/SSH Tunnel Manager.app`。
-- 安装版版本为 `0.5.0`，严格签名校验通过；安装版和已校验压缩包内可执行文件 SHA-256 均为 `a60deaa6d7fc0b3ff611296b177d959ea76c7a365ca7a59533cef331c916e475`。
-- 通过绝对路径环境变量 `SSH_TUNNEL_MANAGER_APPLICATION_SUPPORT_DIRECTORY` 使用空的隔离目录启动安装版。应用持续运行超过 20 秒，没有立即退出、子 SSH 进程或隔离配置写入；测试结束后已终止该隔离实例。
+- 安装版版本为 `0.5.0`，严格签名校验通过；安装版和已校验压缩包内可执行文件 SHA-256 均为 `964b4b0fa4a0ba4300850196e4494bee7d11750e0fdcfd09508c0341a7e1de91`。
+- 通过绝对路径环境变量 `SSH_TUNNEL_MANAGER_APPLICATION_SUPPORT_DIRECTORY` 使用隔离目录启动安装版，并使用 3 个英文 SSH Config 示例覆盖重复与交叉标签。中英文界面的已有标签建议均完成人工验收，未发现文字截断或布局问题。
 - 冒烟过程没有读取、修改或启动用户的真实隧道配置。
 
 ## GitHub Release 审核稿
@@ -50,6 +50,7 @@ v0.5.0 · Tag Batch Actions, Health Checks, and Port Recommendations
 
 - Tags now act as dynamic groups with status summaries and one-click batch start or stop across every matching connection, independent of search, favorites, and sorting.
 - Batch starts preserve manual order, limit preflight concurrency to four, share one listener snapshot and index, and continue after individual skips or failures.
+- Existing tags can be selected while editing; the main panel provides three replaceable pinned tags and a searchable picker with configuration counts. Each tag is limited to 16 characters.
 
 ### Connection Health Checks
 
@@ -76,4 +77,4 @@ v0.5.0 · Tag Batch Actions, Health Checks, and Port Recommendations
 
 ## 结论
 
-0.5.0 的发布文档、Release 测试、性能门槛、分发包、签名、版本、本地化、安装版一致性和隔离启动冒烟均通过。完成发布准备 PR 合并后，可以等待维护者确认，再创建并推送 `v0.5.0` 标签。
+0.5.0 的发布文档、Release 测试、性能门槛、分发包、签名、版本、本地化、安装版一致性和隔离启动验收均通过，已有标签建议的中英文界面也已人工审核。相关变更可以进入 PR 审核；创建并推送 `v0.5.0` 标签仍需维护者另行确认。

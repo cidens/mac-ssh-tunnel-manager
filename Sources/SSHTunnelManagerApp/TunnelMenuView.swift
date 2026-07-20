@@ -14,10 +14,22 @@ struct TunnelMenuView: View {
     @State private var tunnelPendingDeletion: TunnelConfig?
     @State private var searchQuery = ""
     @State private var selectedTag: String?
+    @State private var isShowingTagPicker = false
+    @State private var pinnedTags: [String?]
     @State private var tagBatchConfirmation: TagBatchConfirmation?
     @State private var favoritesOnly = false
     @State private var sortOption: TunnelSortOption = .manual
     @FocusState private var isSearchFocused: Bool
+
+    private let tagFilterPreferencesStore: TagFilterPreferencesStore
+
+    init(tagFilterPreferencesStore: TagFilterPreferencesStore = .defaultStore()) {
+        self.tagFilterPreferencesStore = tagFilterPreferencesStore
+        let preferences = try? tagFilterPreferencesStore.load()
+        _pinnedTags = State(
+            initialValue: preferences?.pinnedTags ?? TagFilterPreferences().pinnedTags
+        )
+    }
 
     var body: some View {
         ZStack {
@@ -83,6 +95,7 @@ struct TunnelMenuView: View {
             }
             .environmentObject(manager)
         }
+        .onAppear { initializePinnedTagsIfNeeded() }
         .onChange(of: manager.riskWarning?.id) { _, warningID in
             if warningID != nil {
                 isSearchFocused = false
@@ -261,7 +274,8 @@ struct TunnelMenuView: View {
     }
 
     private var filters: some View {
-        let availableTags = manager.availableTags
+        let tagIndex = manager.tagFilterIndex
+        let availableTags = tagIndex.options.map(\.tag)
         return VStack(alignment: .leading, spacing: 8) {
             HStack(spacing: 8) {
                 TextField(AppStrings.searchTunnels(), text: $searchQuery)
@@ -283,25 +297,78 @@ struct TunnelMenuView: View {
             }
             if !availableTags.isEmpty || selectedTag != nil || !searchQuery.isEmpty || favoritesOnly {
                 HStack(spacing: 6) {
-                    ScrollView(.horizontal, showsIndicators: false) {
-                        HStack(spacing: 6) {
-                            Button(AppStrings.allTags()) { selectedTag = nil }
-                                .buttonStyle(.bordered)
-                                .tint(selectedTag == nil ? .accentColor : nil)
-                            ForEach(availableTags, id: \.self) { tag in
-                                Button(tag) {
-                                    selectedTag = isSelectedTag(tag) ? nil : tag
+                    Button(AppStrings.allTags()) { selectedTag = nil }
+                        .buttonStyle(.bordered)
+                        .tint(selectedTag == nil ? .accentColor : nil)
+
+                    ForEach(0..<TagFilterPreferences.maximumPinnedCount, id: \.self) { slot in
+                        let option = tagIndex.option(matching: pinnedTag(at: slot))
+                        Button {
+                            if let option { selectedTag = option.tag }
+                        } label: {
+                            HStack(spacing: 4) {
+                                Text(option?.tag ?? AppStrings.pinnedTagSlot(slot + 1))
+                                    .lineLimit(1)
+                                if let option {
+                                    Text("\(option.configurationCount)")
+                                        .font(.caption)
+                                        .foregroundStyle(.secondary)
                                 }
-                                .buttonStyle(.bordered)
-                                .tint(isSelectedTag(tag) ? .accentColor : nil)
                             }
+                            .frame(maxWidth: .infinity)
+                        }
+                        .buttonStyle(.bordered)
+                        .tint(option.map { isSelectedTag($0.tag) } == true ? .accentColor : nil)
+                        .disabled(option == nil)
+                        .frame(maxWidth: .infinity)
+                    }
+                }
+
+                HStack(spacing: 8) {
+                    Button {
+                        isSearchFocused = false
+                        isShowingTagPicker = true
+                    } label: {
+                        HStack(spacing: 6) {
+                            Image(systemName: "tag")
+                            Text(AppStrings.chooseTag())
+                                .lineLimit(1)
+                            Spacer(minLength: 4)
+                            Text(AppStrings.tagCount(availableTags.count))
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                                .lineLimit(1)
+                            Image(systemName: "chevron.down")
+                                .font(.caption.weight(.semibold))
                         }
                     }
+                    .buttonStyle(.bordered)
                     .frame(maxWidth: .infinity)
-                    let count = manager.displayedTunnels(searchQuery: searchQuery, selectedTag: selectedTag, favoritesOnly: favoritesOnly, sort: sortOption).count
+                    .layoutPriority(0)
+                    .popover(isPresented: $isShowingTagPicker, arrowEdge: .bottom) {
+                        TagFilterPicker(
+                            index: tagIndex,
+                            selectedTag: selectedTag,
+                            pinnedTags: pinnedTags
+                        ) { tag in
+                            selectedTag = tag
+                            isShowingTagPicker = false
+                        } onReplacePinnedTag: { slot, tag in
+                            replacePinnedTag(at: slot, with: tag)
+                        }
+                    }
+
+                    let count = manager.displayedTunnels(
+                        searchQuery: searchQuery,
+                        selectedTag: selectedTag,
+                        favoritesOnly: favoritesOnly,
+                        sort: sortOption
+                    ).count
                     Text(AppStrings.resultCount(count))
                         .font(.caption)
                         .foregroundStyle(.secondary)
+                        .fixedSize()
+                        .layoutPriority(1)
                     if selectedTag != nil || !searchQuery.isEmpty || favoritesOnly {
                         Button(AppStrings.clearFilters()) {
                             searchQuery = ""
@@ -309,6 +376,8 @@ struct TunnelMenuView: View {
                             favoritesOnly = false
                         }
                         .buttonStyle(.borderless)
+                        .fixedSize()
+                        .layoutPriority(1)
                     }
                 }
             }
@@ -331,6 +400,44 @@ struct TunnelMenuView: View {
 
     private func isSelectedTag(_ tag: String) -> Bool {
         selectedTag?.caseInsensitiveCompare(tag) == .orderedSame
+    }
+
+    private func pinnedTag(at index: Int) -> String? {
+        pinnedTags.indices.contains(index) ? pinnedTags[index] : nil
+    }
+
+    private func initializePinnedTagsIfNeeded() {
+        guard pinnedTags.allSatisfy({ $0 == nil }), !manager.tagFilterIndex.options.isEmpty else {
+            return
+        }
+        let defaults = manager.tagFilterIndex.defaultPinnedTags.map(Optional.some)
+        persistPinnedTags(TagFilterPreferences(pinnedTags: defaults).pinnedTags)
+    }
+
+    private func replacePinnedTag(at index: Int, with tag: String) {
+        guard pinnedTags.indices.contains(index) else { return }
+        var updated = pinnedTags
+        let key = TagGroupSnapshot.comparisonKey(tag)
+        if let existingIndex = updated.firstIndex(where: {
+            $0.map(TagGroupSnapshot.comparisonKey) == key
+        }), existingIndex != index {
+            updated.swapAt(existingIndex, index)
+        } else {
+            updated[index] = tag
+        }
+        persistPinnedTags(updated)
+    }
+
+    private func persistPinnedTags(_ updated: [String?]) {
+        let previous = pinnedTags
+        let preferences = TagFilterPreferences(pinnedTags: updated)
+        do {
+            try tagFilterPreferencesStore.save(preferences)
+            pinnedTags = preferences.pinnedTags
+        } catch {
+            pinnedTags = previous
+            manager.addError = AppStrings.failedToSavePinnedTags(error.localizedDescription)
+        }
     }
 
     private func tagBatchConfirmationTitle(_ confirmation: TagBatchConfirmation) -> String {
@@ -588,6 +695,7 @@ private struct TunnelEditorView: View {
     @State private var portRecommendation: LocalPortRecommendationPresentation?
     @State private var portRecommendationTask: Task<Void, Never>?
     @State private var didHandleInitialPortConflict = false
+    @State private var tagSuggestionOptions: [TagInputSuggestions.Option] = []
 
     init(
         tunnel: TunnelConfig?,
@@ -624,6 +732,7 @@ private struct TunnelEditorView: View {
                     ScrollView {
                         TunnelFormView(
                             draft: $draft,
+                            tagSuggestionOptions: tagSuggestionOptions,
                             allowsTypeSelection: tunnel == nil,
                             expandedRuleID: $expandedRuleID,
                             portRecommendation: portRecommendation,
@@ -690,6 +799,9 @@ private struct TunnelEditorView: View {
         .frame(width: 680, height: 700)
         .onAppear {
             NotificationCenter.default.post(name: .menuPanelModalInteractionDidBegin, object: nil)
+            tagSuggestionOptions = TagInputSuggestions.prepare(
+                availableTags: manager.availableTags
+            )
             handleInitialPortConflictIfNeeded()
         }
         .onDisappear {
@@ -701,6 +813,10 @@ private struct TunnelEditorView: View {
             portRecommendationTask?.cancel()
             portRecommendationTask = nil
             portRecommendation = nil
+        }
+        .onChange(of: draft.tags) { oldValue, newValue in
+            guard oldValue != newValue else { return }
+            manager.addError = ""
         }
         .onExitCommand {
             if manager.riskWarning != nil {
@@ -1222,6 +1338,7 @@ struct TunnelConnectionDetailsView: View {
 
 private struct TunnelFormView: View {
     @Binding var draft: TunnelDraft
+    let tagSuggestionOptions: [TagInputSuggestions.Option]
     var allowsTypeSelection = false
     @Binding var expandedRuleID: UUID?
     var portRecommendation: LocalPortRecommendationPresentation?
@@ -1271,7 +1388,8 @@ private struct TunnelFormView: View {
             }
             GridRow {
                 Text(AppStrings.formTags())
-                TextField(AppStrings.placeholderTags(), text: $draft.tags)
+                    .gridCellAnchor(.topLeading)
+                TagInputField(text: $draft.tags, options: tagSuggestionOptions)
             }
         }
         .textFieldStyle(.roundedBorder)
@@ -1385,6 +1503,186 @@ private struct TunnelFormView: View {
                 draft.rules = rules
             }
         )
+    }
+}
+
+private struct TagFilterPicker: View {
+    let index: TagFilterIndex
+    let selectedTag: String?
+    let pinnedTags: [String?]
+    let onSelect: (String?) -> Void
+    let onReplacePinnedTag: (Int, String) -> Void
+    @State private var query = ""
+    @State private var editingSlot: Int?
+    @FocusState private var isSearchFocused: Bool
+
+    private var filteredOptions: [TagFilterIndex.Option] {
+        index.filtering(query: query)
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Text(AppStrings.pinnedTags())
+                .font(.caption.weight(.semibold))
+
+            HStack(spacing: 6) {
+                ForEach(0..<TagFilterPreferences.maximumPinnedCount, id: \.self) { slot in
+                    let option = index.option(matching: pinnedTag(at: slot))
+                    Button {
+                        editingSlot = editingSlot == slot ? nil : slot
+                    } label: {
+                        VStack(spacing: 2) {
+                            Text(option?.tag ?? AppStrings.pinnedTagSlot(slot + 1))
+                                .lineLimit(1)
+                            if let option {
+                                Text(AppStrings.configurationCount(option.configurationCount))
+                                    .font(.caption2)
+                                    .foregroundStyle(.secondary)
+                            }
+                        }
+                        .frame(maxWidth: .infinity)
+                    }
+                    .buttonStyle(.bordered)
+                    .tint(editingSlot == slot ? .accentColor : nil)
+                    .frame(maxWidth: .infinity)
+                }
+            }
+
+            if let editingSlot {
+                Text(AppStrings.replacePinnedTagHelp(editingSlot + 1))
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+
+            TextField(AppStrings.searchTags(), text: $query)
+                .textFieldStyle(.roundedBorder)
+                .focused($isSearchFocused)
+
+            ScrollView {
+                LazyVStack(alignment: .leading, spacing: 2) {
+                    tagButton(
+                        title: AppStrings.allTags(),
+                        isSelected: selectedTag == nil,
+                        tag: nil
+                    )
+
+                    Divider()
+
+                    ForEach(filteredOptions, id: \.tag) { option in
+                        tagButton(
+                            title: option.tag,
+                            configurationCount: option.configurationCount,
+                            isSelected: selectedTag.map {
+                                TagGroupSnapshot.comparisonKey($0) == option.key
+                            } ?? false,
+                            tag: option.tag
+                        )
+                    }
+
+                    if filteredOptions.isEmpty {
+                        Text(AppStrings.noMatchingTags())
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .padding(.vertical, 12)
+                    }
+                }
+            }
+        }
+        .padding(12)
+        .frame(width: 340, height: 430)
+        .onAppear {
+            NotificationCenter.default.post(
+                name: .menuPanelModalInteractionDidBegin,
+                object: nil
+            )
+            isSearchFocused = true
+        }
+        .onDisappear {
+            NotificationCenter.default.post(
+                name: .menuPanelModalInteractionDidEnd,
+                object: nil
+            )
+        }
+    }
+
+    private func pinnedTag(at index: Int) -> String? {
+        pinnedTags.indices.contains(index) ? pinnedTags[index] : nil
+    }
+
+    private func tagButton(
+        title: String,
+        configurationCount: Int? = nil,
+        isSelected: Bool,
+        tag: String?
+    ) -> some View {
+        Button {
+            if let editingSlot, let tag {
+                onReplacePinnedTag(editingSlot, tag)
+                self.editingSlot = nil
+            } else {
+                onSelect(tag)
+            }
+        } label: {
+            HStack(spacing: 8) {
+                Text(title)
+                    .lineLimit(1)
+                Spacer()
+                if let configurationCount {
+                    Text(AppStrings.configurationCount(configurationCount))
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+                if isSelected {
+                    Image(systemName: "checkmark")
+                        .foregroundStyle(.tint)
+                }
+            }
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .padding(.horizontal, 8)
+        .padding(.vertical, 6)
+        .background(isSelected ? Color.accentColor.opacity(0.12) : Color.clear)
+        .clipShape(RoundedRectangle(cornerRadius: 6))
+    }
+}
+
+private struct TagInputField: View {
+    @Binding var text: String
+    let options: [TagInputSuggestions.Option]
+    @FocusState private var isFocused: Bool
+
+    private var suggestions: [String] {
+        TagInputSuggestions.matching(options: options, input: text)
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            TextField(AppStrings.placeholderTags(), text: $text)
+                .focused($isFocused)
+
+            if isFocused && !suggestions.isEmpty {
+                ScrollView(.horizontal, showsIndicators: false) {
+                    HStack(spacing: 6) {
+                        Text(AppStrings.string("form.tags.existing"))
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                        ForEach(suggestions, id: \.self) { tag in
+                            Button(tag) {
+                                text = TagInputSuggestions.selecting(tag, in: text)
+                                isFocused = true
+                            }
+                            .buttonStyle(.bordered)
+                            .controlSize(.small)
+                            .help(AppStrings.format("form.tags.suggestion.help", tag))
+                            .accessibilityLabel(AppStrings.format("form.tags.suggestion.help", tag))
+                        }
+                    }
+                }
+            }
+        }
     }
 }
 

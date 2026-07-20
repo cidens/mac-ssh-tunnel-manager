@@ -187,7 +187,10 @@ import Testing
     #expect(tags == ["Production", "Database", "café", "CAFE"])
 }
 
-@Test func rejectsTagsBeyondConfiguredLimits() {
+@Test func acceptsTagLengthBoundaryAndRejectsConfiguredLimits() throws {
+    let maximumLengthTag = String(repeating: "x", count: TunnelConfig.maximumTagLength)
+
+    #expect(try TunnelConfig.normalizedTags(["12345678", maximumLengthTag]) == ["12345678", maximumLengthTag])
     #expect(throws: TunnelTagValidationError.tooManyTags(maximum: TunnelConfig.maximumTagCount)) {
         try TunnelConfig.normalizedTags((0...TunnelConfig.maximumTagCount).map { "tag-\($0)" })
     }

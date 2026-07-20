@@ -8,7 +8,7 @@ This project follows the basic Semantic Versioning convention: patch releases fo
 
 ## 0.5.0
 
-- Makes tags actionable dynamic groups with status summaries and one-click batch start or stop in manual order. Search, favorites, and sorting do not narrow the target set; preflight shares one listener index and runs at most four tasks concurrently.
+- Makes tags actionable groups for batch start or stop. Existing tags can be selected while editing, and the main panel provides three replaceable pinned tags plus a searchable picker with configuration counts. Each tag is limited to 16 characters.
 - Adds explicit available-port recommendations for Local Forward and Dynamic SOCKS rules. Recommendations exclude all configured listeners and one system-listener snapshot, update `openURL` only when applicable, and do not replace save-time or start-time conflict checks.
 - Adds opt-in per-rule health checks: TCP and HTTP/HTTPS for Local Forward, and SOCKS5 for Dynamic Forward. Checks are limited to eight concurrent probes, mark a rule unhealthy after three consecutive failures, recover after one success, and cancel safely when connections stop, change, lose network access, or enter sleep.
 - Upgrades configuration export to `schemaVersion = 3` with optional health-check settings. Schema v1 and v2 imports remain supported with health checks disabled by default.

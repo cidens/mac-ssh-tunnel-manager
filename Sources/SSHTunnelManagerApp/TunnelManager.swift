@@ -103,7 +103,9 @@ private enum SSHConfigForwardingDirectiveStatus {
 
 @MainActor
 final class TunnelManager: ObservableObject {
-    @Published private(set) var tunnels: [TunnelConfig] = []
+    @Published private(set) var tunnels: [TunnelConfig] = [] {
+        didSet { tagFilterIndex = TagFilterIndex(tunnels: tunnels) }
+    }
     @Published private(set) var runtimes: [TunnelConfig.ID: TunnelRuntimeState] = [:]
     @Published var addError = ""
     @Published var riskWarning: TunnelRiskWarning?
@@ -131,6 +133,7 @@ final class TunnelManager: ObservableObject {
     private var lastUsedPersistenceTask: Task<Void, Never>?
     private var isNetworkAvailable = true
     private var isSystemSleeping = false
+    private(set) var tagFilterIndex = TagFilterIndex(tunnels: [])
 
     init(
         store: TunnelConfigStore = TunnelManager.defaultStore(),
@@ -172,6 +175,7 @@ final class TunnelManager: ObservableObject {
         } catch {
             addError = AppStrings.failedToLoadTunnels(error.localizedDescription)
         }
+        tagFilterIndex = TagFilterIndex(tunnels: tunnels)
 
         healthCheckScheduler.onResult = { [weak self] target, result, date in
             self?.recordHealthCheckResult(target, result: result, at: date)
@@ -423,16 +427,7 @@ final class TunnelManager: ObservableObject {
     }
 
     var availableTags: [String] {
-        var seen = Set<String>()
-        var tags: [String] = []
-        for tunnel in tunnels {
-            for tag in tunnel.tags {
-                if seen.insert(TagGroupSnapshot.comparisonKey(tag)).inserted {
-                    tags.append(tag)
-                }
-            }
-        }
-        return tags.sorted { $0.localizedStandardCompare($1) == .orderedAscending }
+        tagFilterIndex.options.map(\.tag)
     }
 
     func tagGroupSnapshot(for tag: String) -> TagGroupSnapshot {
