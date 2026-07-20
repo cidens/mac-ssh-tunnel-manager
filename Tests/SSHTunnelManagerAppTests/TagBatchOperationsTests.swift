@@ -278,7 +278,7 @@ struct TagBatchOperationsTests {
     #expect(loopbackConflict.isOccupied(host: "[::1]", port: 18_080, excluding: first.id))
 
     let wildcardConflict = TagBatchConfiguredListenerIndex(tunnels: [first, wildcard])
-    #expect(wildcardConflict.isOccupied(host: "192.168.1.10", port: 18_081, excluding: first.id))
+    #expect(wildcardConflict.isOccupied(host: "203.0.113.10", port: 18_081, excluding: first.id))
     #expect(!wildcardConflict.isOccupied(host: "127.0.0.1", port: 18_080, excluding: first.id))
 }
 
