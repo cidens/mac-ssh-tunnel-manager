@@ -66,3 +66,17 @@ import Testing
 
     #expect(PortStatusParser.isListening(lsofOutput: output, host: "[::1]", port: 8088))
 }
+
+@Test func extractsAllListeningEndpointsForReuseByRecommendation() {
+    let output = """
+    COMMAND PID USER FD TYPE DEVICE SIZE/OFF NODE NAME
+    ssh 1960 ad 4u IPv4 0x123 0t0 TCP 127.0.0.1:8088 (LISTEN)
+    ssh 1960 ad 5u IPv6 0x124 0t0 TCP [::1]:8089 (LISTEN)
+    ssh 1960 ad 6u IPv4 0x125 0t0 UDP 127.0.0.1:8090
+    """
+
+    #expect(PortStatusParser.listeningEndpoints(lsofOutput: output) == [
+        LocalPortEndpoint(host: "127.0.0.1", port: 8088),
+        LocalPortEndpoint(host: "[::1]", port: 8089),
+    ])
+}

@@ -50,6 +50,11 @@ public struct SSHCommandBuilder: Sendable {
         }
     }
 
+    public func validateLocalListenerHost(_ host: String) throws {
+        try validateNonEmpty(host, field: "localHost")
+        try validateLocalForwardHostLike(host, field: "localHost")
+    }
+
     private func validate(_ rule: TunnelForwardRule) throws {
         switch rule.mode {
         case .localForward:

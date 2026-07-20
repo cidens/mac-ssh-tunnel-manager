@@ -17,6 +17,7 @@ struct TunnelRuntimeState {
     var nextRetryAt: Date?
     var errorCategory: TunnelFailureCategory?
     var notificationCycle = TunnelNotificationCycle()
+    var localPortConflict: LocalPortEndpoint?
 }
 
 struct TunnelConnectionDetails {
@@ -78,17 +79,13 @@ private enum SSHConfigForwardingDirectiveStatus {
     case timedOut
 }
 
-private struct LocalPortEndpoint: Hashable, Sendable {
-    let host: String
-    let port: Int
-}
-
 @MainActor
 final class TunnelManager: ObservableObject {
     @Published private(set) var tunnels: [TunnelConfig] = []
     @Published private(set) var runtimes: [TunnelConfig.ID: TunnelRuntimeState] = [:]
     @Published var addError = ""
     @Published var riskWarning: TunnelRiskWarning?
+    @Published private(set) var validationPortConflict: LocalPortEndpoint?
 
     private let store: TunnelConfigStore
     private let sshConfigResolver: any SSHConfigResolving
@@ -100,6 +97,7 @@ final class TunnelManager: ObservableObject {
     private var pendingRiskOperation: (() -> Void)?
     private let recoveryMonitor: SystemRecoveryMonitor
     private let notificationSender: any ConnectionNotificationSending
+    private let localPortSnapshotProvider: any LocalPortSnapshotProviding
     private var isNetworkAvailable = true
     private var isSystemSleeping = false
 
@@ -107,12 +105,14 @@ final class TunnelManager: ObservableObject {
         store: TunnelConfigStore = TunnelManager.defaultStore(),
         sshConfigResolver: any SSHConfigResolving = SystemSSHConfigResolver(),
         recoveryMonitor: SystemRecoveryMonitor = SystemRecoveryMonitor(),
-        notificationSender: any ConnectionNotificationSending = DisabledConnectionNotificationSender.shared
+        notificationSender: any ConnectionNotificationSending = DisabledConnectionNotificationSender.shared,
+        localPortSnapshotProvider: any LocalPortSnapshotProviding = SystemLocalPortSnapshotProvider()
     ) {
         self.store = store
         self.sshConfigResolver = sshConfigResolver
         self.recoveryMonitor = recoveryMonitor
         self.notificationSender = notificationSender
+        self.localPortSnapshotProvider = localPortSnapshotProvider
         do {
             tunnels = try store.load()
             if tunnels.allSatisfy({ $0.manualOrder == nil }) {
@@ -227,6 +227,68 @@ final class TunnelManager: ObservableObject {
 
     func isRunRequested(for tunnel: TunnelConfig) -> Bool {
         runtimes[tunnel.id]?.recovery.wantsToRun == true
+    }
+
+    func localPortConflict(for tunnel: TunnelConfig) -> LocalPortEndpoint? {
+        runtimes[tunnel.id]?.localPortConflict
+    }
+
+    func clearValidationPortConflict() {
+        validationPortConflict = nil
+    }
+
+    func recommendedLocalPort(
+        for fingerprint: LocalPortRecommendationFingerprint,
+        in draft: TunnelDraft,
+        editingTunnelID: TunnelConfig.ID?
+    ) async throws -> Int {
+        guard let rule = draft.rules.first(where: { $0.id == fingerprint.ruleID }),
+              rule.localPortRecommendationFingerprint == fingerprint else {
+            throw LocalPortRecommendationError.unsupportedRule
+        }
+        do {
+            try commandBuilder.validateLocalListenerHost(fingerprint.host)
+        } catch {
+            throw LocalPortRecommendationError.invalidListenerHost
+        }
+
+        let tunnelSnapshot = tunnels
+        let draftEndpoints = draft.rules.compactMap { candidate -> LocalPortEndpoint? in
+            guard candidate.id != fingerprint.ruleID,
+                  candidate.mode == .localForward || candidate.mode == .dynamicForward,
+                  let port = Int(candidate.localPort.trimmingCharacters(in: .whitespacesAndNewlines)) else {
+                return nil
+            }
+            let host = candidate.localHost.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !host.isEmpty else { return nil }
+            return LocalPortEndpoint(host: host, port: port)
+        }
+        let provider = localPortSnapshotProvider
+        let currentPort = Int(fingerprint.portText)
+
+        let task = Task.detached(priority: .userInitiated) {
+            guard !Task.isCancelled else { throw CancellationError() }
+            let storedEndpoints = tunnelSnapshot
+                .filter { $0.id != editingTunnelID }
+                .flatMap(Self.configuredLocalListenerEndpoints(for:))
+            let output = try provider.snapshot()
+            guard !Task.isCancelled else { throw CancellationError() }
+            let endpoints = storedEndpoints + draftEndpoints
+                + PortStatusParser.listeningEndpoints(lsofOutput: output)
+            let index = LocalPortOccupancyIndex(endpoints: endpoints)
+            guard let port = index.firstAvailablePort(
+                host: fingerprint.host,
+                startingAfter: currentPort
+            ) else {
+                throw LocalPortRecommendationError.noAvailablePort
+            }
+            return port
+        }
+        return try await withTaskCancellationHandler {
+            try await task.value
+        } onCancel: {
+            task.cancel()
+        }
     }
 
     private func isOperational(for tunnel: TunnelConfig) -> Bool {
@@ -433,6 +495,7 @@ final class TunnelManager: ObservableObject {
         onSuccess: (() -> Void)?
     ) -> Bool {
         addError = ""
+        validationPortConflict = nil
         do {
             var tunnel = try validatedTunnel(from: draft, allowRiskyBind: allowRiskyBind)
             tunnel.manualOrder = (tunnels.map { $0.manualOrder ?? -1 }.max() ?? -1) + 1
@@ -452,6 +515,7 @@ final class TunnelManager: ObservableObject {
             }
             return false
         } catch {
+            validationPortConflict = Self.localPortConflict(from: error)
             addError = error.localizedDescription
             return false
         }
@@ -474,6 +538,7 @@ final class TunnelManager: ObservableObject {
         onSuccess: (() -> Void)?
     ) -> Bool {
         addError = ""
+        validationPortConflict = nil
         let existingKind: TunnelConfigurationKind = tunnel.mode == .sshConfig
             ? .sshConfigReference
             : .connectionGroup
@@ -518,6 +583,7 @@ final class TunnelManager: ObservableObject {
             updatedTunnel.lastUsedAt = tunnel.lastUsedAt
             tunnels[index] = updatedTunnel
             runtimes[tunnel.id]?.lastError = ""
+            runtimes[tunnel.id]?.localPortConflict = nil
             do {
                 try save()
             } catch {
@@ -538,6 +604,7 @@ final class TunnelManager: ObservableObject {
             }
             return false
         } catch {
+            validationPortConflict = Self.localPortConflict(from: error)
             addError = error.localizedDescription
             return false
         }
@@ -588,6 +655,7 @@ final class TunnelManager: ObservableObject {
         runtime.lastExitCode = nil
         runtime.nextRetryAt = nil
         runtime.errorCategory = nil
+        runtime.localPortConflict = nil
         runtime.notificationCycle.reset()
         runtime.allowsRiskyRestart = allowRiskyBind
         runtimes[tunnel.id] = runtime
@@ -730,6 +798,7 @@ final class TunnelManager: ObservableObject {
             runtime.nextRetryAt = nil
             runtime.lastExitCode = nil
             runtime.errorCategory = nil
+            runtime.localPortConflict = nil
             runtime.recoveryNotificationTask = recoveryNotificationTask(
                 for: tunnel.id,
                 generation: generation,
@@ -766,6 +835,9 @@ final class TunnelManager: ObservableObject {
                 retryable: isAutomaticRecovery && retryableValidationError,
                 isAutomaticRecovery: isAutomaticRecovery
             )
+            if let conflict = Self.localPortConflict(from: error) {
+                runtimes[tunnel.id]?.localPortConflict = conflict
+            }
         }
     }
 
@@ -820,6 +892,7 @@ final class TunnelManager: ObservableObject {
         runtime.lastExitCode = nil
         runtime.nextRetryAt = nil
         runtime.errorCategory = nil
+        runtime.localPortConflict = nil
         runtime.notificationCycle.reset()
         if let process = runtime.process {
             ManagedProcessTerminator.terminateAndWait(
@@ -1406,6 +1479,17 @@ final class TunnelManager: ObservableObject {
         }
     }
 
+    nonisolated private static func configuredLocalListenerEndpoints(
+        for tunnel: TunnelConfig
+    ) -> [LocalPortEndpoint] {
+        tunnel.effectiveRules.compactMap { rule in
+            guard rule.mode == .localForward || rule.mode == .dynamicForward else {
+                return nil
+            }
+            return LocalPortEndpoint(host: rule.localHost, port: rule.localPort)
+        }
+    }
+
     private static func usesGeneratedForwardingArguments(_ tunnel: TunnelConfig) -> Bool {
         tunnel.mode == .localForward || tunnel.mode == .remoteForward || tunnel.mode == .dynamicForward
     }
@@ -1490,14 +1574,14 @@ final class TunnelManager: ObservableObject {
     }
 
     private static func listenerHostsOverlap(_ lhs: String, _ rhs: String) -> Bool {
-        let normalize: (String) -> String = { value in
-            let lower = value.lowercased()
-            return lower == "localhost" ? "127.0.0.1" : lower
+        LocalPortOccupancyIndex.hostsOverlap(lhs, rhs)
+    }
+
+    private static func localPortConflict(from error: Error) -> LocalPortEndpoint? {
+        guard case let TunnelValidationError.localPortOccupied(host, port) = error else {
+            return nil
         }
-        let left = normalize(lhs)
-        let right = normalize(rhs)
-        let wildcards = Set(["*", "0.0.0.0", "::", "[::]"])
-        return left == right || wildcards.contains(left) || wildcards.contains(right)
+        return LocalPortEndpoint(host: host, port: port)
     }
 
     private func validateSSHConfigRisk(

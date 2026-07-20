@@ -4,7 +4,7 @@
 
 用于管理 SSH 本地端口转发、远程端口转发和动态 SOCKS 隧道的 macOS 菜单栏应用。
 
-当前版本：`0.4.0`
+当前版本：`0.5.0`
 
 应用名称为 `SSH Tunnel Manager`，SwiftPM executable target 为 `ssh-tunnel-manager`。
 
@@ -17,6 +17,7 @@
 - 可只读发现 `~/.ssh/config` 及可访问的 `Include` 文件中的明确 Host 别名，预览后批量导入引用。
 - 支持按全部或所选范围导出 JSON 配置，并通过预览、冲突策略和导入前备份安全导入。
 - 同一个 SSH Host 可在一个连接组中混合承载多条本地、远程和动态 SOCKS 转发，统一启动、停止、重连和自动连接。
+- 本地转发和动态 SOCKS 规则可显式推荐可用的非特权本地端口；推荐会排除应用内全部已配置监听和一次系统监听快照，采用后仍在保存与启动时复检冲突。
 - 隧道配置以 JSON 保存在本机。
 - 支持通过标签、收藏、搜索和排序快速定位隧道配置。
 - 支持为单条隧道启用自动重连，并在断网或睡眠恢复后按退避策略恢复。
@@ -83,7 +84,7 @@ open -a 'SSH Tunnel Manager'
 产物会输出到：
 
 ```text
-dist/SSH Tunnel Manager-0.4.0.zip
+dist/SSH Tunnel Manager-0.5.0.zip
 ```
 
 对方解压后，把 `SSH Tunnel Manager.app` 拖到 `/Applications`，再从 Finder、Spotlight 或 Launchpad 打开。
@@ -112,6 +113,7 @@ swift test
 - [JSON 配置导入导出验收记录](docs/validation-json-import-export.md)
 - [登录项与逐连接自动启动验收记录](docs/validation-login-auto-start.md)
 - [连接组与多规则转发验收记录](docs/validation-connection-groups.md)
+- [本地监听端口推荐验收记录](docs/validation-local-port-recommendation.md)
 - [分发说明](docs/distribution.md)
 - [隐私说明](docs/privacy.md)
 - [排障手册](docs/troubleshooting.md)

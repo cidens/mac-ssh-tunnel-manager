@@ -242,3 +242,12 @@
 "configuration.import.issue.duplicateName" = "Duplicate tunnel name: %@";
 "configuration.import.issue.portConflict" = "Local listener conflict: %@:%d";
 "configuration.import.issue.exposure" = "The listener may be exposed to the network: %@:%d. Manual confirmation is still required before starting it.";
+"portRecommendation.action" = "Recommend Available Port";
+"portRecommendation.loading" = "Checking local ports…";
+"portRecommendation.suggested" = "Available port: %d";
+"portRecommendation.use" = "Use %d";
+"portRecommendation.error.unsupported" = "Port recommendation is only available for local forwarding and dynamic SOCKS rules.";
+"portRecommendation.error.invalidHost" = "Enter a valid local listener address before requesting a port.";
+"portRecommendation.error.unavailable" = "No available non-privileged local port was found.";
+"portRecommendation.error.snapshotFailed" = "Could not inspect the local listening ports. Try again.";
+"portRecommendation.error.snapshotTimedOut" = "Inspecting the local listening ports timed out. Try again.";

@@ -6,7 +6,7 @@
 
 `mac-ssh-tunnel-manager` 是公开仓库名。应用名称为 `SSH Tunnel Manager`，SwiftPM executable target 为 `ssh-tunnel-manager`。它是一个个人使用的 macOS 菜单栏应用，用 GUI 管理 SSH 本地端口转发、远程端口转发和动态 SOCKS 隧道。应用不实现 SSH 协议，也不保存服务器密码或私钥，而是直接调用系统 `/usr/bin/ssh`，复用用户已有的 `~/.ssh/config`、ssh-agent 和 macOS Keychain。
 
-当前版本为 `0.4.0`，版本号定义在 `SSHTunnelCore/AppVersion.swift`。
+当前版本为 `0.5.0`，版本号定义在 `SSHTunnelCore/AppVersion.swift`。
 
 ## 模块结构
 
@@ -94,7 +94,7 @@ swift run ssh-tunnel-manager
 脚本会生成：
 
 ```text
-dist/SSH Tunnel Manager-0.4.0.zip
+dist/SSH Tunnel Manager-0.5.0.zip
 ```
 
 zip 包使用本机 ad-hoc 签名，不包含 Apple Developer ID notarization，适合可信用户小范围分发。正式公开分发需要后续接入 Developer ID 签名和 notarization。
