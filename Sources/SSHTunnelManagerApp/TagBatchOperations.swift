@@ -207,18 +207,19 @@ struct TagBatchConfiguredListenerIndex: Sendable {
     init(tunnels: [TunnelConfig]) {
         var values: [Int: PortOccupancy] = [:]
         var count = 0
-        values.reserveCapacity(tunnels.count)
+        values.reserveCapacity(tunnels.count * TunnelConfig.maximumRuleCount)
         for tunnel in tunnels {
-            for endpoint in tagBatchLocalListenerEndpoints(for: tunnel) {
+            for rule in tunnel.effectiveRules where rule.isEnabled
+                && (rule.mode == .localForward || rule.mode == .dynamicForward) {
                 count += 1
                 let listener = Listener(
                     owner: tunnel.id,
-                    host: Self.normalizedHost(endpoint.host)
+                    host: Self.normalizedHost(rule.localHost)
                 )
-                if values[endpoint.port] != nil {
-                    values[endpoint.port]?.append(listener)
+                if values[rule.localPort] != nil {
+                    values[rule.localPort]?.append(listener)
                 } else {
-                    values[endpoint.port] = PortOccupancy(first: listener)
+                    values[rule.localPort] = PortOccupancy(first: listener)
                 }
             }
         }

@@ -3,6 +3,9 @@ import Testing
 import SSHTunnelCore
 @testable import SSHTunnelManagerApp
 
+@Suite(.serialized)
+struct TagBatchOperationsTests {
+
 @Test func tagGroupSnapshotMatchesCaseInsensitivelyAndConservesStatusCounts() {
     var first = tagBatchTunnel(name: "First", tag: "Production", order: 2)
     var second = tagBatchTunnel(name: "Second", tag: "production", order: 0)
@@ -472,6 +475,8 @@ import SSHTunnelCore
     #if !DEBUG
     #expect(p95 < 0.05, "Release tag batch main-actor response P95 was \(p95) seconds")
     #endif
+}
+
 }
 
 private struct StubTagBatchPreflightChecker: TagBatchStartPreflightChecking {

@@ -6,6 +6,10 @@ public struct SSHStartCommand: Equatable, Sendable {
 }
 
 public struct SSHCommandBuilder: Sendable {
+    private static let forbiddenHostCharacters = CharacterSet.whitespacesAndNewlines
+        .union(.controlCharacters)
+        .union(CharacterSet(charactersIn: "\"'`;$|&(){}<>\\*"))
+
     public init() {}
 
     public func validate(_ tunnel: TunnelConfig) throws {
@@ -132,10 +136,7 @@ public struct SSHCommandBuilder: Sendable {
             throw TunnelValidationError.invalidHost(field)
         }
 
-        let forbidden = CharacterSet.whitespacesAndNewlines
-            .union(.controlCharacters)
-            .union(CharacterSet(charactersIn: "\"'`;$|&(){}<>\\*"))
-        guard value.unicodeScalars.allSatisfy({ !forbidden.contains($0) }) else {
+        guard value.unicodeScalars.allSatisfy({ !Self.forbiddenHostCharacters.contains($0) }) else {
             throw TunnelValidationError.invalidHost(field)
         }
     }
