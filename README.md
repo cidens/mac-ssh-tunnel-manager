@@ -4,7 +4,7 @@
 
 用于管理 SSH 本地端口转发、远程端口转发和动态 SOCKS 隧道的 macOS 菜单栏应用。
 
-当前版本：`0.4.0`
+当前版本：`0.5.0`
 
 应用名称为 `SSH Tunnel Manager`，SwiftPM executable target 为 `ssh-tunnel-manager`。
 
@@ -84,7 +84,7 @@ open -a 'SSH Tunnel Manager'
 产物会输出到：
 
 ```text
-dist/SSH Tunnel Manager-0.4.0.zip
+dist/SSH Tunnel Manager-0.5.0.zip
 ```
 
 对方解压后，把 `SSH Tunnel Manager.app` 拖到 `/Applications`，再从 Finder、Spotlight 或 Launchpad 打开。
