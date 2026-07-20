@@ -118,6 +118,7 @@ swift test
 - [连接组与多规则转发验收记录](docs/validation-connection-groups.md)
 - [本地监听端口推荐验收记录](docs/validation-local-port-recommendation.md)
 - [规则级连接健康检查验收记录](docs/validation-connection-health-check.md)
+- [0.5.0 发布前验收记录](docs/validation-release-0.5.0.md)
 - [分发说明](docs/distribution.md)
 - [隐私说明](docs/privacy.md)
 - [排障手册](docs/troubleshooting.md)
