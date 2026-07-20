@@ -73,6 +73,20 @@ private struct TunnelNameConflictError: LocalizedError {
 private enum TunnelStartTrigger {
     case manual
     case automatic
+    case batch
+}
+
+private struct TagBatchMemberReference: Sendable {
+    let id: TunnelConfig.ID
+    let name: String
+    let stopVersion: UInt64
+}
+
+private struct TagBatchPreparedStart: Sendable {
+    let reference: TagBatchMemberReference
+    let tunnel: TunnelConfig?
+    let stopVersion: UInt64
+    let decision: TagBatchPreflightDecision
 }
 
 private enum SSHConfigForwardingStatus {
@@ -94,6 +108,7 @@ final class TunnelManager: ObservableObject {
     @Published var addError = ""
     @Published var riskWarning: TunnelRiskWarning?
     @Published private(set) var validationPortConflict: LocalPortEndpoint?
+    @Published private(set) var tagBatchOperation: TagBatchOperationState?
 
     private let store: TunnelConfigStore
     private let sshConfigResolver: any SSHConfigResolving
@@ -107,6 +122,13 @@ final class TunnelManager: ObservableObject {
     private let notificationSender: any ConnectionNotificationSending
     private let localPortSnapshotProvider: any LocalPortSnapshotProviding
     private let healthCheckScheduler: HealthCheckScheduler
+    private let tagBatchPreflightChecker: any TagBatchStartPreflightChecking
+    private let tagBatchStartHook: TagBatchStartHook?
+    private let tagBatchStopHook: TagBatchStopHook?
+    private var tagBatchTask: Task<Void, Never>?
+    private var tagBatchGeneration: UInt64 = 0
+    private var manualStopVersions: [TunnelConfig.ID: UInt64] = [:]
+    private var lastUsedPersistenceTask: Task<Void, Never>?
     private var isNetworkAvailable = true
     private var isSystemSleeping = false
 
@@ -117,7 +139,10 @@ final class TunnelManager: ObservableObject {
         notificationSender: any ConnectionNotificationSending = DisabledConnectionNotificationSender.shared,
         localPortSnapshotProvider: any LocalPortSnapshotProviding = SystemLocalPortSnapshotProvider(),
         healthProber: any HealthProbing = SystemHealthProber(),
-        healthSchedulerClock: HealthCheckSchedulerClock = .live
+        healthSchedulerClock: HealthCheckSchedulerClock = .live,
+        tagBatchPreflightChecker: (any TagBatchStartPreflightChecking)? = nil,
+        tagBatchStartHook: TagBatchStartHook? = nil,
+        tagBatchStopHook: TagBatchStopHook? = nil
     ) {
         self.store = store
         self.sshConfigResolver = sshConfigResolver
@@ -128,6 +153,13 @@ final class TunnelManager: ObservableObject {
             prober: healthProber,
             clock: healthSchedulerClock
         )
+        self.tagBatchPreflightChecker = tagBatchPreflightChecker
+            ?? SystemTagBatchStartPreflightChecker(
+                sshConfigResolver: sshConfigResolver,
+                localPortSnapshotProvider: localPortSnapshotProvider
+            )
+        self.tagBatchStartHook = tagBatchStartHook
+        self.tagBatchStopHook = tagBatchStopHook
         do {
             tunnels = try store.load()
             if tunnels.allSatisfy({ $0.manualOrder == nil }) {
@@ -176,10 +208,7 @@ final class TunnelManager: ObservableObject {
     }
 
     static func defaultStore() -> TunnelConfigStore {
-        let base = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first
-            ?? FileManager.default.homeDirectoryForCurrentUser
-        let url = base
-            .appending(path: "ssh-tunnel-manager", directoryHint: .isDirectory)
+        let url = AppSupportPaths.directory()
             .appending(path: "tunnels.json")
         return TunnelConfigStore(configURL: url)
     }
@@ -396,13 +425,354 @@ final class TunnelManager: ObservableObject {
     var availableTags: [String] {
         var seen = Set<String>()
         var tags: [String] = []
-        for tag in tunnels.flatMap(\.tags) {
-            let comparisonKey = tag.folding(options: .caseInsensitive, locale: nil)
-            if seen.insert(comparisonKey).inserted {
-                tags.append(tag)
+        for tunnel in tunnels {
+            for tag in tunnel.tags {
+                if seen.insert(TagGroupSnapshot.comparisonKey(tag)).inserted {
+                    tags.append(tag)
+                }
             }
         }
         return tags.sorted { $0.localizedStandardCompare($1) == .orderedAscending }
+    }
+
+    func tagGroupSnapshot(for tag: String) -> TagGroupSnapshot {
+        TagGroupSnapshot(tag: tag, tunnels: tunnels, status: status(for:))
+    }
+
+    func startAllTunnels(withTag tag: String) {
+        guard tagBatchOperation?.isRunning != true else { return }
+        let snapshot = tagGroupSnapshot(for: tag)
+        let lookup = Dictionary(uniqueKeysWithValues: tunnels.map { ($0.id, $0) })
+        let members = snapshot.memberIDs.compactMap { id in
+            lookup[id].map {
+                TagBatchMemberReference(
+                    id: id,
+                    name: $0.name,
+                    stopVersion: manualStopVersions[id, default: 0]
+                )
+            }
+        }
+        guard !members.isEmpty else {
+            let result = TagBatchResult(action: .start, tag: tag, outcomes: [])
+            tagBatchOperation = TagBatchOperationState.running(
+                tag: tag,
+                action: .start,
+                totalCount: 0
+            ).completed(with: result)
+            return
+        }
+
+        tagBatchGeneration &+= 1
+        let generation = tagBatchGeneration
+        let operation = TagBatchOperationState.running(
+            tag: tag,
+            action: .start,
+            totalCount: members.count
+        )
+        tagBatchOperation = operation
+        let checker = tagBatchPreflightChecker
+        let initialTunnels = tunnels
+
+        tagBatchTask = Task { [weak self] in
+            let context = await TagBatchDetachedWork.run {
+                checker.prepare(tunnels: initialTunnels)
+            }
+            guard !Task.isCancelled, let self, self.tagBatchGeneration == generation else { return }
+
+            let prepared = await BoundedTagBatchScheduler.run(elements: members) { [weak self] member in
+                guard let self else {
+                    return TagBatchPreparedStart(
+                        reference: member,
+                        tunnel: nil,
+                        stopVersion: 0,
+                        decision: .skipped(.cancelled)
+                    )
+                }
+                return await self.prepareTagBatchStart(
+                    member,
+                    context: context,
+                    checker: checker,
+                    generation: generation
+                )
+            }
+
+            guard !Task.isCancelled, self.tagBatchGeneration == generation else { return }
+            var outcomes: [TagBatchMemberOutcome] = []
+            outcomes.reserveCapacity(prepared.count)
+            for candidate in prepared {
+                guard !Task.isCancelled, self.tagBatchGeneration == generation else { return }
+                outcomes.append(await self.launchPreparedTagBatchStart(
+                    candidate,
+                    context: context,
+                    checker: checker,
+                    generation: generation
+                ))
+            }
+
+            guard self.tagBatchGeneration == generation else { return }
+            let result = TagBatchResult(action: .start, tag: tag, outcomes: outcomes)
+            self.tagBatchOperation = operation.completed(with: result)
+            self.tagBatchTask = nil
+        }
+    }
+
+    func stopAllTunnels(withTag tag: String) {
+        if let active = tagBatchOperation, active.isRunning, active.action == .stop {
+            return
+        }
+        tagBatchTask?.cancel()
+        tagBatchGeneration &+= 1
+        let generation = tagBatchGeneration
+        let snapshot = tagGroupSnapshot(for: tag)
+        let lookup = Dictionary(uniqueKeysWithValues: tunnels.map { ($0.id, $0) })
+        let members = snapshot.memberIDs.compactMap { id in
+            lookup[id].map {
+                TagBatchMemberReference(
+                    id: id,
+                    name: $0.name,
+                    stopVersion: manualStopVersions[id, default: 0]
+                )
+            }
+        }
+        for member in members {
+            manualStopVersions[member.id, default: 0] &+= 1
+        }
+
+        let operation = TagBatchOperationState.running(
+            tag: tag,
+            action: .stop,
+            totalCount: members.count
+        )
+        tagBatchOperation = operation
+        guard !members.isEmpty else {
+            let result = TagBatchResult(action: .stop, tag: tag, outcomes: [])
+            tagBatchOperation = operation.completed(with: result)
+            tagBatchTask = nil
+            return
+        }
+
+        tagBatchTask = Task { [weak self] in
+            let outcomes = await BoundedTagBatchScheduler.run(elements: members) { [weak self] member in
+                guard let self else {
+                    return TagBatchMemberOutcome(
+                        id: member.id,
+                        name: member.name,
+                        kind: .skipped,
+                        reason: TagBatchSkipReason.cancelled.displayText()
+                    )
+                }
+                return await self.stopTagBatchMember(member, generation: generation)
+            }
+            guard !Task.isCancelled, let self, self.tagBatchGeneration == generation else { return }
+            let result = TagBatchResult(action: .stop, tag: tag, outcomes: outcomes)
+            self.tagBatchOperation = operation.completed(with: result)
+            self.tagBatchTask = nil
+        }
+    }
+
+    func clearTagBatchResult() {
+        guard tagBatchOperation?.isRunning != true else { return }
+        tagBatchOperation = nil
+    }
+
+    private func prepareTagBatchStart(
+        _ member: TagBatchMemberReference,
+        context: TagBatchPreflightContext,
+        checker: any TagBatchStartPreflightChecking,
+        generation: UInt64
+    ) async -> TagBatchPreparedStart {
+        guard !Task.isCancelled, tagBatchGeneration == generation else {
+            return TagBatchPreparedStart(
+                reference: member,
+                tunnel: nil,
+                stopVersion: member.stopVersion,
+                decision: .skipped(.cancelled)
+            )
+        }
+        guard let tunnel = tunnels.first(where: { $0.id == member.id }) else {
+            return TagBatchPreparedStart(
+                reference: member,
+                tunnel: nil,
+                stopVersion: member.stopVersion,
+                decision: .skipped(.missing)
+            )
+        }
+        let stopVersion = member.stopVersion
+        guard manualStopVersions[member.id, default: 0] == stopVersion else {
+            return TagBatchPreparedStart(
+                reference: member,
+                tunnel: tunnel,
+                stopVersion: stopVersion,
+                decision: .skipped(.stoppedDuringBatch)
+            )
+        }
+        guard !isRunRequested(for: tunnel) else {
+            return TagBatchPreparedStart(
+                reference: member,
+                tunnel: tunnel,
+                stopVersion: stopVersion,
+                decision: .skipped(.alreadyRequested)
+            )
+        }
+        let decision = await TagBatchDetachedWork.run {
+            checker.check(tunnel: tunnel, context: context)
+        }
+        return TagBatchPreparedStart(
+            reference: member,
+            tunnel: tunnel,
+            stopVersion: stopVersion,
+            decision: Task.isCancelled ? .skipped(.cancelled) : decision
+        )
+    }
+
+    private func launchPreparedTagBatchStart(
+        _ original: TagBatchPreparedStart,
+        context: TagBatchPreflightContext,
+        checker: any TagBatchStartPreflightChecking,
+        generation: UInt64
+    ) async -> TagBatchMemberOutcome {
+        var prepared = original
+        for attempt in 0..<3 {
+            guard !Task.isCancelled, tagBatchGeneration == generation else {
+                return skippedOutcome(prepared.reference, reason: .cancelled)
+            }
+            guard let current = tunnels.first(where: { $0.id == prepared.reference.id }) else {
+                return skippedOutcome(prepared.reference, reason: .missing)
+            }
+            guard manualStopVersions[current.id, default: 0] == prepared.stopVersion else {
+                return skippedOutcome(prepared.reference, reason: .stoppedDuringBatch)
+            }
+            guard !isRunRequested(for: current) else {
+                return skippedOutcome(prepared.reference, reason: .alreadyRequested)
+            }
+            if prepared.tunnel != current {
+                guard attempt < 2 else {
+                    return skippedOutcome(prepared.reference, reason: .changedDuringPreflight)
+                }
+                prepared = await prepareTagBatchStart(
+                    prepared.reference,
+                    context: context,
+                    checker: checker,
+                    generation: generation
+                )
+                continue
+            }
+
+            switch prepared.decision {
+            case .skipped(let reason):
+                return skippedOutcome(prepared.reference, reason: reason)
+            case .eligible:
+                break
+            }
+
+            if let tagBatchStartHook {
+                switch tagBatchStartHook(current) {
+                case .accepted:
+                    return TagBatchMemberOutcome(
+                        id: current.id,
+                        name: current.name,
+                        kind: .started,
+                        reason: nil
+                    )
+                case .failed(let message):
+                    return TagBatchMemberOutcome(
+                        id: current.id,
+                        name: current.name,
+                        kind: .failed,
+                        reason: message
+                    )
+                }
+            }
+
+            start(
+                current,
+                allowRiskyBind: false,
+                trigger: .batch,
+                preflightCompleted: true
+            )
+            let latest = tunnels.first(where: { $0.id == current.id }) ?? current
+            if status(for: latest) == .failed {
+                return TagBatchMemberOutcome(
+                    id: latest.id,
+                    name: latest.name,
+                    kind: .failed,
+                    reason: lastError(for: latest)
+                )
+            }
+            if isRunRequested(for: latest) || isManagedProcessRunning(for: latest) {
+                return TagBatchMemberOutcome(
+                    id: latest.id,
+                    name: latest.name,
+                    kind: .started,
+                    reason: nil
+                )
+            }
+            return TagBatchMemberOutcome(
+                id: latest.id,
+                name: latest.name,
+                kind: .failed,
+                reason: AppStrings.string("tagBatch.reason.startRejected")
+            )
+        }
+        return skippedOutcome(original.reference, reason: .changedDuringPreflight)
+    }
+
+    private func stopTagBatchMember(
+        _ member: TagBatchMemberReference,
+        generation: UInt64
+    ) async -> TagBatchMemberOutcome {
+        guard !Task.isCancelled, tagBatchGeneration == generation else {
+            return skippedOutcome(member, reason: .cancelled)
+        }
+        guard let tunnel = tunnels.first(where: { $0.id == member.id }) else {
+            return skippedOutcome(member, reason: .missing)
+        }
+        if let tagBatchStopHook {
+            switch tagBatchStopHook(tunnel) {
+            case .accepted:
+                return TagBatchMemberOutcome(id: tunnel.id, name: tunnel.name, kind: .stopped, reason: nil)
+            case .failed(let message):
+                return TagBatchMemberOutcome(id: tunnel.id, name: tunnel.name, kind: .failed, reason: message)
+            }
+        }
+
+        guard let runtime = runtimes[tunnel.id], Self.isActiveForStop(runtime) else {
+            return skippedOutcome(member, reason: .alreadyStopped)
+        }
+        let process = prepareRuntimeForStop(tunnel.id, reason: .userRequested, clearError: true)
+        if let process, process.isRunning {
+            let stopped = await Task.detached(priority: .userInitiated) {
+                ManagedProcessTerminator.terminateAndWait(
+                    process,
+                    timeout: 1,
+                    forceKillAfterTimeout: true
+                )
+            }.value
+            guard stopped else {
+                restoreProcessAfterFailedStop(process, tunnelID: tunnel.id)
+                refreshStatuses()
+                return TagBatchMemberOutcome(
+                    id: tunnel.id,
+                    name: tunnel.name,
+                    kind: .failed,
+                    reason: AppStrings.string("tagBatch.reason.stopFailed")
+                )
+            }
+        }
+        refreshStatuses()
+        return TagBatchMemberOutcome(id: tunnel.id, name: tunnel.name, kind: .stopped, reason: nil)
+    }
+
+    private func skippedOutcome(
+        _ member: TagBatchMemberReference,
+        reason: TagBatchSkipReason
+    ) -> TagBatchMemberOutcome {
+        TagBatchMemberOutcome(
+            id: member.id,
+            name: member.name,
+            kind: .skipped,
+            reason: reason.displayText()
+        )
     }
 
     var existingSSHConfigAliases: [String] {
@@ -672,6 +1042,7 @@ final class TunnelManager: ObservableObject {
         reconcileHealthChecks()
         do {
             try save()
+            manualStopVersions.removeValue(forKey: tunnel.id)
         } catch {
             tunnels = previousTunnels
             addError = AppStrings.failedToSaveTunnels(error.localizedDescription)
@@ -679,19 +1050,20 @@ final class TunnelManager: ObservableObject {
     }
 
     func start(_ tunnel: TunnelConfig) {
-        start(tunnel, allowRiskyBind: false, trigger: .manual)
+        start(tunnel, allowRiskyBind: false, trigger: .manual, preflightCompleted: false)
     }
 
     func startAutomaticallyConfiguredTunnels() {
         for tunnel in tunnels where tunnel.isAutoStartEnabled {
-            start(tunnel, allowRiskyBind: false, trigger: .automatic)
+            start(tunnel, allowRiskyBind: false, trigger: .automatic, preflightCompleted: false)
         }
     }
 
     private func start(
         _ tunnel: TunnelConfig,
         allowRiskyBind: Bool,
-        trigger: TunnelStartTrigger
+        trigger: TunnelStartTrigger,
+        preflightCompleted: Bool
     ) {
         var runtime = runtimes[tunnel.id] ?? TunnelRuntimeState()
         guard runtime.process?.isRunning != true else { return }
@@ -721,7 +1093,8 @@ final class TunnelManager: ObservableObject {
             tunnel,
             generation: generation,
             allowRiskyBind: allowRiskyBind,
-            isAutomaticRecovery: trigger == .automatic
+            trigger: trigger,
+            preflightCompleted: preflightCompleted
         )
     }
 
@@ -729,51 +1102,55 @@ final class TunnelManager: ObservableObject {
         _ tunnel: TunnelConfig,
         generation: UInt64,
         allowRiskyBind: Bool,
-        isAutomaticRecovery: Bool
+        trigger: TunnelStartTrigger,
+        preflightCompleted: Bool = false
     ) {
         do {
-            try commandBuilder.validateForStart(tunnel)
-            try validateGeneratedForwardingHost(tunnel)
-            try validateLocalEndpointConflicts(for: tunnel)
-            if tunnel.mode == .sshConfig {
-                let sshConfigName = tunnel.sshConfigName ?? ""
-                switch sshConfigForwardingStatus(named: sshConfigName) {
-                case .hasForwarding(let directives):
-                    try validateSSHConfigRisk(directives, allowRiskyBind: allowRiskyBind)
-                case .missingForwarding:
-                    var runtime = runtimes[tunnel.id] ?? TunnelRuntimeState()
-                    runtime.process = nil
-                    runtime.lastError = sanitizedDiagnostic(
-                        TunnelValidationError.sshConfigMissingForwardingDirective(sshConfigName)
-                            .localizedDescription,
-                        for: tunnel
-                    )
-                    let previousPhase = runtime.recovery.phase
-                    _ = runtime.recovery.requestStop(reason: .nonRetryableFailure)
-                    updateStatusChangedAt(&runtime, from: previousPhase)
-                    recordFailure(
-                        in: &runtime,
-                        diagnostic: runtime.lastError,
-                        nextRetryAt: nil
-                    )
-                    runtimes[tunnel.id] = runtime
-                    return
-                case .timedOut:
-                    let error = TunnelValidationError.sshConfigValidationTimedOut(
-                        sshConfigName,
-                        Self.sshConfigValidationTimeoutSeconds
-                    )
-                    recordLaunchFailure(
-                        error.localizedDescription,
-                        for: tunnel,
-                        generation: generation,
-                        retryable: isAutomaticRecovery,
-                        isAutomaticRecovery: isAutomaticRecovery
-                    )
-                    return
+            if !preflightCompleted {
+                try commandBuilder.validateForStart(tunnel)
+                try validateGeneratedForwardingHost(tunnel)
+                try validateLocalEndpointConflicts(for: tunnel)
+                if tunnel.mode == .sshConfig {
+                    let sshConfigName = tunnel.sshConfigName ?? ""
+                    switch sshConfigForwardingStatus(named: sshConfigName) {
+                    case .hasForwarding(let directives):
+                        try validateSSHConfigRisk(directives, allowRiskyBind: allowRiskyBind)
+                    case .missingForwarding:
+                        var runtime = runtimes[tunnel.id] ?? TunnelRuntimeState()
+                        runtime.process = nil
+                        runtime.lastError = sanitizedDiagnostic(
+                            TunnelValidationError.sshConfigMissingForwardingDirective(sshConfigName)
+                                .localizedDescription,
+                            for: tunnel
+                        )
+                        let previousPhase = runtime.recovery.phase
+                        _ = runtime.recovery.requestStop(reason: .nonRetryableFailure)
+                        updateStatusChangedAt(&runtime, from: previousPhase)
+                        recordFailure(
+                            in: &runtime,
+                            diagnostic: runtime.lastError,
+                            nextRetryAt: nil
+                        )
+                        runtimes[tunnel.id] = runtime
+                        return
+                    case .timedOut:
+                        let error = TunnelValidationError.sshConfigValidationTimedOut(
+                            sshConfigName,
+                            Self.sshConfigValidationTimeoutSeconds
+                        )
+                        let isAutomaticRecovery = trigger == .automatic
+                        recordLaunchFailure(
+                            error.localizedDescription,
+                            for: tunnel,
+                            generation: generation,
+                            retryable: isAutomaticRecovery,
+                            isAutomaticRecovery: isAutomaticRecovery
+                        )
+                        return
+                    }
+                } else {
+                    try validateRiskyBind(tunnel, allowRiskyBind: allowRiskyBind)
                 }
-            } else {
-                try validateRiskyBind(tunnel, allowRiskyBind: allowRiskyBind)
             }
 
             let command = commandBuilder.buildStartCommand(for: tunnel)
@@ -862,12 +1239,15 @@ final class TunnelManager: ObservableObject {
             )
             runtime.stableResetTask = stableResetTask(for: tunnel.id, generation: generation)
             runtimes[tunnel.id] = runtime
-            markTunnelUsed(tunnel.id)
+            markTunnelUsed(tunnel.id, coalescingPersistence: trigger == .batch)
             refreshStatuses()
         } catch let confirmation as TunnelRiskConfirmationRequired {
-            if isAutomaticRecovery {
+            if trigger != .manual {
+                let message = trigger == .automatic
+                    ? AppStrings.autoStartRiskConfirmationRequired()
+                    : AppStrings.string("tagBatch.reason.riskConfirmation")
                 recordLaunchFailure(
-                    AppStrings.autoStartRiskConfirmationRequired(),
+                    message,
                     for: tunnel,
                     generation: generation,
                     retryable: false,
@@ -878,7 +1258,12 @@ final class TunnelManager: ObservableObject {
             stopRecoveryTasks(for: tunnel.id, reason: .userRequested, clearError: true)
             requestRiskConfirmation(title: confirmation.title, message: confirmation.message) { [weak self] in
                 guard let self, let confirmed = self.persistRiskConfirmations(for: tunnel) else { return }
-                self.start(confirmed, allowRiskyBind: true, trigger: .manual)
+                self.start(
+                    confirmed,
+                    allowRiskyBind: true,
+                    trigger: .manual,
+                    preflightCompleted: false
+                )
             }
         } catch {
             let retryableValidationError = (error as? TunnelValidationError)
@@ -888,8 +1273,8 @@ final class TunnelManager: ObservableObject {
                 error.localizedDescription,
                 for: tunnel,
                 generation: generation,
-                retryable: isAutomaticRecovery && retryableValidationError,
-                isAutomaticRecovery: isAutomaticRecovery
+                retryable: trigger == .automatic && retryableValidationError,
+                isAutomaticRecovery: trigger == .automatic
             )
             if let conflict = Self.localPortConflict(from: error) {
                 runtimes[tunnel.id]?.localPortConflict = conflict
@@ -932,11 +1317,29 @@ final class TunnelManager: ObservableObject {
     }
 
     func stop(_ tunnel: TunnelConfig) {
-        guard var runtime = runtimes[tunnel.id] else {
-            return
+        manualStopVersions[tunnel.id, default: 0] &+= 1
+        let process = prepareRuntimeForStop(tunnel.id, reason: .userRequested, clearError: true)
+        if let process, process.isRunning {
+            let stopped = ManagedProcessTerminator.terminateAndWait(
+                process,
+                timeout: 1,
+                forceKillAfterTimeout: true
+            )
+            if !stopped {
+                restoreProcessAfterFailedStop(process, tunnelID: tunnel.id)
+            }
         }
+        refreshStatuses()
+    }
+
+    private func prepareRuntimeForStop(
+        _ tunnelID: TunnelConfig.ID,
+        reason: TunnelStopReason,
+        clearError: Bool
+    ) -> Process? {
+        guard var runtime = runtimes[tunnelID] else { return nil }
         let previousPhase = runtime.recovery.phase
-        _ = runtime.recovery.requestStop(reason: .userRequested)
+        _ = runtime.recovery.requestStop(reason: reason)
         updateStatusChangedAt(&runtime, from: previousPhase)
         runtime.retryTask?.cancel()
         runtime.recoveryNotificationTask?.cancel()
@@ -944,26 +1347,32 @@ final class TunnelManager: ObservableObject {
         runtime.retryTask = nil
         runtime.recoveryNotificationTask = nil
         runtime.stableResetTask = nil
-        runtime.lastError = ""
-        runtime.lastExitCode = nil
         runtime.nextRetryAt = nil
-        runtime.errorCategory = nil
-        runtime.localPortConflict = nil
         runtime.notificationCycle.reset()
         runtime.ruleHealthStates = [:]
-        let process = runtime.process
-        runtimes[tunnel.id] = runtime
-        reconcileHealthChecks()
-        if let process {
-            ManagedProcessTerminator.terminateAndWait(
-                process,
-                timeout: 1,
-                forceKillAfterTimeout: true
-            )
+        if clearError {
+            runtime.lastError = ""
+            runtime.lastExitCode = nil
+            runtime.errorCategory = nil
+            runtime.localPortConflict = nil
         }
+        let process = runtime.process
         runtime.process = nil
-        runtimes[tunnel.id] = runtime
-        refreshStatuses()
+        runtimes[tunnelID] = runtime
+        reconcileHealthChecks()
+        return process
+    }
+
+    private static func isActiveForStop(_ runtime: TunnelRuntimeState) -> Bool {
+        runtime.recovery.wantsToRun || runtime.process?.isRunning == true
+    }
+
+    private func restoreProcessAfterFailedStop(_ process: Process, tunnelID: TunnelConfig.ID) {
+        guard process.isRunning, var runtime = runtimes[tunnelID], runtime.process == nil else {
+            return
+        }
+        runtime.process = process
+        runtimes[tunnelID] = runtime
     }
 
     private func scheduleRetry(for tunnel: TunnelConfig, generation: UInt64, delay: TimeInterval) {
@@ -991,7 +1400,8 @@ final class TunnelManager: ObservableObject {
                 tunnel,
                 generation: generation,
                 allowRiskyBind: allowsRiskyRestart,
-                isAutomaticRecovery: true
+                trigger: .automatic,
+                preflightCompleted: false
             )
         }
         runtimes[tunnel.id] = runtime
@@ -1164,7 +1574,8 @@ final class TunnelManager: ObservableObject {
                 tunnel,
                 generation: generation,
                 allowRiskyBind: allowsRiskyRestart,
-                isAutomaticRecovery: true
+                trigger: .automatic,
+                preflightCompleted: false
             )
         }
         runtimes[tunnel.id] = runtime
@@ -1220,6 +1631,10 @@ final class TunnelManager: ObservableObject {
 
     func prepareForApplicationTermination() {
         healthCheckScheduler.updateTargets([])
+        tagBatchTask?.cancel()
+        tagBatchTask = nil
+        tagBatchGeneration &+= 1
+        flushPendingLastUsedPersistence()
         stopAllManagedTunnels(forceKillAfterTimeout: true)
         healthCheckScheduler.shutdown()
         recoveryMonitor.stop()
@@ -1477,10 +1892,43 @@ final class TunnelManager: ObservableObject {
         for index in tunnels.indices { tunnels[index].manualOrder = index }
     }
 
-    private func markTunnelUsed(_ id: TunnelConfig.ID) {
+    private func markTunnelUsed(
+        _ id: TunnelConfig.ID,
+        coalescingPersistence: Bool = false
+    ) {
         guard let index = tunnels.firstIndex(where: { $0.id == id }) else { return }
-        persistChanges {
-            tunnels[index].lastUsedAt = Date()
+        guard coalescingPersistence else {
+            persistChanges {
+                tunnels[index].lastUsedAt = Date()
+            }
+            return
+        }
+        tunnels[index].lastUsedAt = Date()
+        lastUsedPersistenceTask?.cancel()
+        lastUsedPersistenceTask = Task { [weak self] in
+            do {
+                try await Task.sleep(for: .milliseconds(500))
+            } catch {
+                return
+            }
+            guard !Task.isCancelled, let self else { return }
+            self.lastUsedPersistenceTask = nil
+            do {
+                try self.save()
+            } catch {
+                self.addError = AppStrings.failedToSaveTunnels(error.localizedDescription)
+            }
+        }
+    }
+
+    private func flushPendingLastUsedPersistence() {
+        guard lastUsedPersistenceTask != nil else { return }
+        lastUsedPersistenceTask?.cancel()
+        lastUsedPersistenceTask = nil
+        do {
+            try save()
+        } catch {
+            addError = AppStrings.failedToSaveTunnels(error.localizedDescription)
         }
     }
 

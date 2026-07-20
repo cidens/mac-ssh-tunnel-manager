@@ -14,6 +14,7 @@ struct TunnelMenuView: View {
     @State private var tunnelPendingDeletion: TunnelConfig?
     @State private var searchQuery = ""
     @State private var selectedTag: String?
+    @State private var tagBatchConfirmation: TagBatchConfirmation?
     @State private var favoritesOnly = false
     @State private var sortOption: TunnelSortOption = .manual
     @FocusState private var isSearchFocused: Bool
@@ -87,8 +88,40 @@ struct TunnelMenuView: View {
                 isSearchFocused = false
             }
         }
+        .confirmationDialog(
+            tagBatchConfirmation.map(tagBatchConfirmationTitle) ?? "",
+            isPresented: Binding(
+                get: { tagBatchConfirmation != nil },
+                set: { if !$0 { tagBatchConfirmation = nil } }
+            ),
+            titleVisibility: .visible
+        ) {
+            if let confirmation = tagBatchConfirmation {
+                if confirmation.action == .stop {
+                    Button(
+                        AppStrings.format("tagBatch.action.stop", confirmation.count),
+                        role: .destructive
+                    ) {
+                        performTagBatchAction(confirmation)
+                    }
+                } else {
+                    Button(AppStrings.format("tagBatch.action.start", confirmation.count)) {
+                        performTagBatchAction(confirmation)
+                    }
+                }
+            }
+            Button(AppStrings.cancel(), role: .cancel) {
+                tagBatchConfirmation = nil
+            }
+        } message: {
+            if let confirmation = tagBatchConfirmation {
+                Text(tagBatchConfirmationMessage(confirmation))
+            }
+        }
         .onExitCommand {
-            if tunnelPendingDeletion != nil {
+            if tagBatchConfirmation != nil {
+                tagBatchConfirmation = nil
+            } else if tunnelPendingDeletion != nil {
                 tunnelPendingDeletion = nil
             } else if manager.riskWarning != nil {
                 manager.cancelRiskyOperation()
@@ -279,11 +312,53 @@ struct TunnelMenuView: View {
                     }
                 }
             }
+            if let selectedTag {
+                TagBatchControlsView(
+                    snapshot: manager.tagGroupSnapshot(for: selectedTag),
+                    onRequestAction: { action, count in
+                        isSearchFocused = false
+                        tagBatchConfirmation = TagBatchConfirmation(
+                            action: action,
+                            tag: selectedTag,
+                            count: count
+                        )
+                    }
+                )
+                .environmentObject(manager)
+            }
         }
     }
 
     private func isSelectedTag(_ tag: String) -> Bool {
         selectedTag?.caseInsensitiveCompare(tag) == .orderedSame
+    }
+
+    private func tagBatchConfirmationTitle(_ confirmation: TagBatchConfirmation) -> String {
+        AppStrings.format(
+            confirmation.action == .start
+                ? "tagBatch.confirm.start.title"
+                : "tagBatch.confirm.stop.title",
+            confirmation.tag
+        )
+    }
+
+    private func tagBatchConfirmationMessage(_ confirmation: TagBatchConfirmation) -> String {
+        AppStrings.format(
+            confirmation.action == .start
+                ? "tagBatch.confirm.start.message"
+                : "tagBatch.confirm.stop.message",
+            confirmation.count
+        )
+    }
+
+    private func performTagBatchAction(_ confirmation: TagBatchConfirmation) {
+        tagBatchConfirmation = nil
+        switch confirmation.action {
+        case .start:
+            manager.startAllTunnels(withTag: confirmation.tag)
+        case .stop:
+            manager.stopAllTunnels(withTag: confirmation.tag)
+        }
     }
 
     private var addSection: some View {
@@ -314,6 +389,177 @@ struct TunnelMenuView: View {
                 Label(AppStrings.quit(), systemImage: "power")
             }
             .help(AppStrings.quitHelp())
+        }
+    }
+}
+
+private struct TagBatchConfirmation: Identifiable {
+    let id = UUID()
+    let action: TagBatchAction
+    let tag: String
+    let count: Int
+}
+
+private struct TagBatchControlsView: View {
+    @EnvironmentObject private var manager: TunnelManager
+    let snapshot: TagGroupSnapshot
+    let onRequestAction: (TagBatchAction, Int) -> Void
+
+    private var matchingOperation: TagBatchOperationState? {
+        guard let operation = manager.tagBatchOperation,
+              TagGroupSnapshot.comparisonKey(operation.tag)
+                == TagGroupSnapshot.comparisonKey(snapshot.tag) else {
+            return nil
+        }
+        return operation
+    }
+
+    private var hasRunningOperation: Bool {
+        manager.tagBatchOperation?.isRunning == true
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack(spacing: 8) {
+                Label(snapshot.tag, systemImage: "tag.fill")
+                    .font(.callout.weight(.semibold))
+                    .lineLimit(1)
+                Spacer()
+                Text(AppStrings.format(
+                    "tagBatch.summary",
+                    snapshot.totalCount,
+                    snapshot.runningCount,
+                    snapshot.pendingCount,
+                    snapshot.failedCount,
+                    snapshot.stoppedCount
+                ))
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .lineLimit(1)
+            }
+
+            HStack(spacing: 8) {
+                Spacer()
+                Button {
+                    onRequestAction(.start, snapshot.totalCount)
+                } label: {
+                    Label(
+                        AppStrings.format("tagBatch.action.start", snapshot.totalCount),
+                        systemImage: "play.fill"
+                    )
+                }
+                .buttonStyle(.borderedProminent)
+                .disabled(snapshot.totalCount == 0 || hasRunningOperation)
+                .help(AppStrings.format(
+                    "tagBatch.help.start",
+                    snapshot.totalCount,
+                    snapshot.tag
+                ))
+                .accessibilityLabel(AppStrings.format("tagBatch.action.start", snapshot.totalCount))
+
+                Button(role: .destructive) {
+                    onRequestAction(.stop, snapshot.totalCount)
+                } label: {
+                    Label(
+                        AppStrings.format("tagBatch.action.stop", snapshot.totalCount),
+                        systemImage: "stop.fill"
+                    )
+                }
+                .buttonStyle(.bordered)
+                .disabled(
+                    snapshot.totalCount == 0
+                        || (manager.tagBatchOperation?.isRunning == true
+                            && manager.tagBatchOperation?.action == .stop)
+                )
+                .help(AppStrings.format(
+                    "tagBatch.help.stop",
+                    snapshot.totalCount,
+                    snapshot.tag
+                ))
+                .accessibilityLabel(AppStrings.format("tagBatch.action.stop", snapshot.totalCount))
+            }
+
+            if let operation = matchingOperation {
+                if operation.isRunning {
+                    HStack(spacing: 8) {
+                        ProgressView()
+                            .controlSize(.small)
+                        Text(AppStrings.format(
+                            operation.action == .start
+                                ? "tagBatch.progress.start"
+                                : "tagBatch.progress.stop",
+                            operation.totalCount
+                        ))
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                    }
+                } else if let result = operation.result {
+                    TagBatchResultView(result: result)
+                        .environmentObject(manager)
+                }
+            }
+        }
+        .padding(10)
+        .background(.quaternary.opacity(0.45))
+        .clipShape(RoundedRectangle(cornerRadius: 8))
+        .overlay {
+            RoundedRectangle(cornerRadius: 8)
+                .stroke(.quaternary)
+        }
+        .accessibilityElement(children: .contain)
+    }
+}
+
+private struct TagBatchResultView: View {
+    @EnvironmentObject private var manager: TunnelManager
+    let result: TagBatchResult
+    @State private var showsDetails = false
+
+    var body: some View {
+        let issues = result.issues
+        VStack(alignment: .leading, spacing: 6) {
+            HStack(spacing: 8) {
+                Text(AppStrings.format(
+                    result.action == .start
+                        ? "tagBatch.result.start"
+                        : "tagBatch.result.stop",
+                    result.action == .start ? result.startedCount : result.stoppedCount,
+                    result.skippedCount,
+                    result.failedCount
+                ))
+                .font(.caption.weight(.semibold))
+                Spacer()
+                Button {
+                    manager.clearTagBatchResult()
+                } label: {
+                    Image(systemName: "xmark")
+                }
+                .buttonStyle(.borderless)
+                .help(AppStrings.string("tagBatch.result.dismiss"))
+                .accessibilityLabel(AppStrings.string("tagBatch.result.dismiss"))
+            }
+
+            if !issues.isEmpty {
+                DisclosureGroup(
+                    AppStrings.string("tagBatch.result.details"),
+                    isExpanded: $showsDetails
+                ) {
+                    ScrollView {
+                        VStack(alignment: .leading, spacing: 3) {
+                            ForEach(issues) { issue in
+                                Text("\(issue.name)：\(issue.reason ?? "")")
+                                    .font(.caption)
+                                    .foregroundStyle(issue.kind == .failed ? .red : .secondary)
+                                    .fixedSize(horizontal: false, vertical: true)
+                            }
+                        }
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                    }
+                    .frame(maxHeight: 140)
+                    .padding(.top, 3)
+                }
+                .font(.caption)
+            }
         }
     }
 }
