@@ -23,7 +23,7 @@ import Testing
 @Test func storeRoundTripsTunnelConfigurationsAsJSON() throws {
     let directory = try temporaryDirectory()
     let store = TunnelConfigStore(configURL: directory.appending(path: "tunnels.json"))
-    let tunnel = TunnelConfig(
+    var tunnel = TunnelConfig(
         name: "Example DB",
         sshHost: "work-host",
         localHost: "127.0.0.1",
@@ -32,6 +32,12 @@ import Testing
         remotePort: 5432,
         openURL: URL(string: "http://127.0.0.1:15432")
     )
+    var rule = tunnel.rules[0]
+    rule.healthCheck = TunnelHealthCheckConfiguration(
+        kind: .http,
+        url: URL(string: "http://127.0.0.1:15432/health")
+    )
+    tunnel.replaceRules([rule])
 
     try store.save([tunnel])
 

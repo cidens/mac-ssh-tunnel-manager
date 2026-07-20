@@ -36,6 +36,53 @@ import SSHTunnelCore
     #expect(rebuilt.effectiveRules == tunnel.effectiveRules)
 }
 
+@Test func tunnelDraftRoundTripsRuleHealthChecks() throws {
+    var tunnel = TunnelConfig(
+        name: "Health", sshHost: "example-host", localHost: "127.0.0.1", localPort: 18_080,
+        remoteHost: "web", remotePort: 80, openURL: nil
+    )
+    tunnel.replaceRules([
+        TunnelForwardRule(
+            mode: .localForward,
+            localHost: "127.0.0.1",
+            localPort: 18_080,
+            remoteHost: "web",
+            remotePort: 80,
+            healthCheck: TunnelHealthCheckConfiguration(
+                kind: .http,
+                url: URL(string: "http://127.0.0.1:18080/health"),
+                interval: 45,
+                timeout: 2
+            )
+        ),
+        TunnelForwardRule(
+            mode: .dynamicForward,
+            localHost: "127.0.0.1",
+            localPort: 1_080,
+            healthCheck: TunnelHealthCheckConfiguration(kind: .socks5)
+        ),
+    ])
+
+    let rebuilt = try TunnelDraft(tunnel: tunnel).makeConfig(id: tunnel.id)
+
+    #expect(rebuilt.effectiveRules == tunnel.effectiveRules)
+}
+
+@Test func ruleModeChangesNormalizeUnsupportedHealthChecks() {
+    var rule = TunnelRuleDraft()
+    rule.healthCheck.isEnabled = true
+    rule.healthCheck.kind = .http
+    rule.healthCheck.url = "http://127.0.0.1:18080/health"
+
+    rule.mode = .dynamicForward
+    #expect(rule.healthCheck.isEnabled)
+    #expect(rule.healthCheck.kind == .socks5)
+    #expect(rule.healthCheck.url.isEmpty)
+
+    rule.mode = .remoteForward
+    #expect(!rule.healthCheck.isEnabled)
+}
+
 @Test func tunnelDraftEqualityDetectsUnsavedEditorChanges() {
     let initial = TunnelDraft()
     var changed = initial
@@ -212,6 +259,9 @@ import SSHTunnelCore
     draft.remoteHost = "example-service"
     draft.remotePort = "80"
     draft.openURL = "http://localhost:18080/path?q=1#section"
+    draft.primaryHealthCheck.isEnabled = true
+    draft.primaryHealthCheck.kind = .http
+    draft.primaryHealthCheck.url = "http://127.0.0.1:18080/health?full=1"
     draft.primaryRiskConfirmationSignature = "old-signature"
 
     let applied = draft.applyRecommendedLocalPort(18081, to: draft.primaryRuleID)
@@ -219,6 +269,7 @@ import SSHTunnelCore
     #expect(applied)
     #expect(draft.localPort == "18081")
     #expect(draft.openURL == "http://localhost:18081/path?q=1#section")
+    #expect(draft.primaryHealthCheck.url == "http://127.0.0.1:18081/health?full=1")
     #expect(draft.primaryRiskConfirmationSignature == nil)
 }
 

@@ -680,7 +680,10 @@ struct TunnelRowView: View {
                         .foregroundStyle(.secondary)
                 }
                 Spacer()
-                statusBadge
+                HStack(spacing: 6) {
+                    statusBadge
+                    healthStatusBadge
+                }
             }
 
             HStack {
@@ -802,6 +805,37 @@ struct TunnelRowView: View {
             .clipShape(Capsule())
     }
 
+    @ViewBuilder
+    private var healthStatusBadge: some View {
+        let phase = manager.healthAggregatePhase(for: tunnel)
+        if phase != .notConfigured {
+            Label(AppStrings.healthPhase(phase), systemImage: healthSystemImage(for: phase))
+                .font(.caption.weight(.semibold))
+                .labelStyle(.titleAndIcon)
+                .padding(.horizontal, 8)
+                .padding(.vertical, 4)
+                .background(healthColor(for: phase).opacity(0.15))
+                .foregroundStyle(healthColor(for: phase))
+                .clipShape(Capsule())
+        }
+    }
+
+    private func healthColor(for phase: TunnelHealthAggregatePhase) -> Color {
+        switch phase {
+        case .notConfigured, .waiting: return .secondary
+        case .healthy: return .green
+        case .unhealthy: return .red
+        }
+    }
+
+    private func healthSystemImage(for phase: TunnelHealthAggregatePhase) -> String {
+        switch phase {
+        case .notConfigured, .waiting: return "heart.text.square"
+        case .healthy: return "heart.text.square.fill"
+        case .unhealthy: return "exclamationmark.heart.fill"
+        }
+    }
+
     private func color(for status: TunnelRuntimeStatus) -> Color {
         switch status {
         case .stopped:
@@ -834,61 +868,97 @@ struct TunnelConnectionDetailsView: View {
 
     var body: some View {
         let details = manager.connectionDetails(for: tunnel)
-        VStack(alignment: .leading, spacing: 14) {
-            Text(AppStrings.connectionDetails())
-                .font(.title2.weight(.semibold))
-            Text(tunnel.name)
-                .font(.headline)
-            Text(manager.status(for: tunnel).displayText())
-                .font(.caption.weight(.semibold))
-                .foregroundStyle(.secondary)
+        let healthDetails = manager.healthCheckDetails(for: tunnel)
+        ScrollView {
+            VStack(alignment: .leading, spacing: 14) {
+                Text(AppStrings.connectionDetails())
+                    .font(.title2.weight(.semibold))
+                Text(tunnel.name)
+                    .font(.headline)
+                Text(manager.status(for: tunnel).displayText())
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(.secondary)
 
-            Divider()
+                Divider()
 
-            VStack(alignment: .leading, spacing: 8) {
-                detailRow(
-                    AppStrings.diagnosticStatusChanged(),
-                    details.statusChangedAt.formatted(date: .abbreviated, time: .standard)
-                )
-                detailRow(
-                    AppStrings.diagnosticExitCode(),
-                    details.exitCode.map(String.init) ?? AppStrings.diagnosticNone()
-                )
-                detailRow(AppStrings.diagnosticRetryCount(), String(details.retryCount))
-                detailRow(
-                    AppStrings.diagnosticNextRetry(),
-                    details.nextRetryAt?.formatted(date: .abbreviated, time: .standard)
-                        ?? AppStrings.diagnosticNone()
-                )
-                detailRow(
-                    AppStrings.diagnosticErrorCategory(),
-                    details.errorCategory.map { AppStrings.failureCategory($0) }
-                        ?? AppStrings.diagnosticNone()
-                )
-                detailRow(
-                    AppStrings.diagnosticErrorSummary(),
-                    details.errorSummary.isEmpty ? AppStrings.diagnosticNone() : details.errorSummary
-                )
-            }
+                VStack(alignment: .leading, spacing: 8) {
+                    detailRow(
+                        AppStrings.diagnosticStatusChanged(),
+                        details.statusChangedAt.formatted(date: .abbreviated, time: .standard)
+                    )
+                    detailRow(
+                        AppStrings.diagnosticExitCode(),
+                        details.exitCode.map(String.init) ?? AppStrings.diagnosticNone()
+                    )
+                    detailRow(AppStrings.diagnosticRetryCount(), String(details.retryCount))
+                    detailRow(
+                        AppStrings.diagnosticNextRetry(),
+                        details.nextRetryAt?.formatted(date: .abbreviated, time: .standard)
+                            ?? AppStrings.diagnosticNone()
+                    )
+                    detailRow(
+                        AppStrings.diagnosticErrorCategory(),
+                        details.errorCategory.map { AppStrings.failureCategory($0) }
+                            ?? AppStrings.diagnosticNone()
+                    )
+                    detailRow(
+                        AppStrings.diagnosticErrorSummary(),
+                        details.errorSummary.isEmpty ? AppStrings.diagnosticNone() : details.errorSummary
+                    )
+                }
 
-            Divider()
-
-            HStack {
-                Button(didCopyDiagnostics ? AppStrings.diagnosticsCopied() : AppStrings.copyDiagnostics()) {
-                    manager.copyDiagnostics(for: tunnel)
-                    didCopyDiagnostics = true
-                    Task {
-                        try? await Task.sleep(for: .seconds(2))
-                        didCopyDiagnostics = false
+                if !healthDetails.isEmpty {
+                    Divider()
+                    Text(AppStrings.string("health.details.title"))
+                        .font(.headline)
+                    ForEach(healthDetails) { detail in
+                        VStack(alignment: .leading, spacing: 5) {
+                            HStack {
+                                Text(AppStrings.format(
+                                    "health.details.rule",
+                                    detail.ruleNumber,
+                                    AppStrings.healthKind(detail.kind)
+                                ))
+                                .font(.caption.weight(.semibold))
+                                Spacer()
+                                Text(AppStrings.healthPhase(detail.state.phase))
+                                    .font(.caption.weight(.semibold))
+                                    .foregroundStyle(detail.state.phase == .unhealthy ? .red : .secondary)
+                            }
+                            detailRow(
+                                AppStrings.string("health.details.lastChecked"),
+                                detail.state.lastCheckedAt?.formatted(date: .abbreviated, time: .standard)
+                                    ?? AppStrings.diagnosticNone()
+                            )
+                            if let category = detail.state.failureCategory {
+                                detailRow(
+                                    AppStrings.string("health.details.failure"),
+                                    AppStrings.healthFailureCategory(category)
+                                )
+                            }
+                        }
                     }
                 }
-                Spacer()
-                Button(AppStrings.close()) { dismiss() }
-                    .keyboardShortcut(.defaultAction)
+
+                Divider()
+
+                HStack {
+                    Button(didCopyDiagnostics ? AppStrings.diagnosticsCopied() : AppStrings.copyDiagnostics()) {
+                        manager.copyDiagnostics(for: tunnel)
+                        didCopyDiagnostics = true
+                        Task {
+                            try? await Task.sleep(for: .seconds(2))
+                            didCopyDiagnostics = false
+                        }
+                    }
+                    Spacer()
+                    Button(AppStrings.close()) { dismiss() }
+                        .keyboardShortcut(.defaultAction)
+                }
             }
+            .padding(20)
         }
-        .padding(20)
-        .frame(width: 420)
+        .frame(width: 420, height: 600)
     }
 
     private func detailRow(_ label: String, _ value: String) -> some View {
@@ -1109,6 +1179,11 @@ private struct TunnelRuleDraftView: View {
                         .font(.caption.weight(.semibold))
                         .foregroundStyle(.red)
                 }
+                if rule.healthCheck.isEnabled {
+                    Text(AppStrings.healthKind(rule.healthCheck.kind))
+                        .font(.caption.weight(.semibold))
+                        .foregroundStyle(.secondary)
+                }
                 Spacer()
                 Button { onMove(-1) } label: { Image(systemName: "arrow.up") }
                     .buttonStyle(.borderless)
@@ -1184,12 +1259,70 @@ private struct TunnelRuleDraftView: View {
                     }
                 }
                 .frame(maxWidth: .infinity)
+
+                if rule.mode == .localForward || rule.mode == .dynamicForward {
+                    healthCheckEditor
+                }
             }
         }
         .textFieldStyle(.roundedBorder)
         .padding(8)
         .background(.background.opacity(0.6))
         .clipShape(RoundedRectangle(cornerRadius: 6))
+    }
+
+    private var healthCheckEditor: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Toggle(AppStrings.string("health.form.enabled"), isOn: $rule.healthCheck.isEnabled)
+                .toggleStyle(.checkbox)
+            if rule.healthCheck.isEnabled {
+                Grid(alignment: .leading, horizontalSpacing: 10, verticalSpacing: 8) {
+                    GridRow {
+                        ruleFieldLabel(AppStrings.string("health.form.kind"))
+                        if rule.mode == .dynamicForward {
+                            Text(AppStrings.healthKind(.socks5))
+                                .frame(maxWidth: .infinity, alignment: .leading)
+                        } else {
+                            Picker(AppStrings.string("health.form.kind"), selection: $rule.healthCheck.kind) {
+                                Text(AppStrings.healthKind(.tcp)).tag(TunnelHealthCheckKind.tcp)
+                                Text(AppStrings.healthKind(.http)).tag(TunnelHealthCheckKind.http)
+                            }
+                            .pickerStyle(.segmented)
+                            .labelsHidden()
+                        }
+                        Color.clear.frame(width: 0, height: 0).accessibilityHidden(true)
+                    }
+                    if rule.healthCheck.kind == .http {
+                        GridRow {
+                            ruleFieldLabel(AppStrings.string("health.form.url"))
+                            TextField(AppStrings.string("health.form.url.placeholder"), text: $rule.healthCheck.url)
+                                .frame(maxWidth: .infinity)
+                            Color.clear.frame(width: 0, height: 0).accessibilityHidden(true)
+                        }
+                    }
+                    GridRow {
+                        ruleFieldLabel(AppStrings.string("health.form.interval"))
+                        TextField("30", text: $rule.healthCheck.interval)
+                            .frame(maxWidth: .infinity)
+                        Text(AppStrings.string("health.form.seconds"))
+                            .frame(width: 96, alignment: .leading)
+                            .foregroundStyle(.secondary)
+                    }
+                    GridRow {
+                        ruleFieldLabel(AppStrings.string("health.form.timeout"))
+                        TextField("3", text: $rule.healthCheck.timeout)
+                            .frame(maxWidth: .infinity)
+                        Text(AppStrings.string("health.form.seconds"))
+                            .frame(width: 96, alignment: .leading)
+                            .foregroundStyle(.secondary)
+                    }
+                }
+                Text(AppStrings.string("health.form.help"))
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+        }
+        .padding(.top, 2)
     }
 
     @ViewBuilder

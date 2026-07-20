@@ -25,6 +25,7 @@
 主要文件职责：
 
 - `TunnelConfig.swift`：定义隧道配置、四种模式、标签/收藏/顺序元数据和校验错误。
+- `TunnelHealthCheck.swift`：定义规则级健康检查类型、默认参数、模式约束和 HTTP/HTTPS 本地端点校验。
 - `CoreStrings.swift`：Core 层本地化入口，负责状态摘要、运行状态和校验错误文案。
 - `SSHCommandBuilder.swift`：根据配置生成固定 SSH 参数，不经过 shell 字符串拼接。
 - `TunnelConfigStore.swift`：把隧道配置读写到本机 JSON 文件。
@@ -41,6 +42,8 @@
 - `ManagedProcessTerminator.swift`：终止应用自己启动的进程，并在短超时内等待退出。
 - `TunnelSummary.swift`：汇总运行中、异常和总隧道数量。
 - `TunnelManager.swift`：管理配置列表、筛选排序、运行时状态、SSH `Process` 生命周期和保存前校验。
+- `HealthCheckProber.swift`：实现 TCP、HTTP/HTTPS 和 SOCKS5 探测、系统 TLS、超时分类及可取消网络资源。
+- `HealthCheckScheduler.swift`：维护到期队列、全局 8 并发上限、恢复错峰和运行代次隔离。
 - `SystemRecoveryMonitor.swift`：通过 `NWPathMonitor` 和 `NSWorkspace` 通知桥接网络、睡眠与唤醒事件。
 - `ConnectionNotificationController.swift`：只在用户启用时请求通知权限，并隔离权限、投递和设置失败，不影响隧道生命周期。
 - `LoginItemController.swift`：通过 `SMAppService.mainApp` 注册或注销 macOS 登录项，并以系统实际状态驱动设置开关；界面只展示需要用户处理的异常，非 `.app` 运行模式明确标记为不支持。
@@ -107,12 +110,13 @@ zip 包使用本机 ad-hoc 签名，不包含 Apple Developer ID notarization，
 ~/Library/Application Support/ssh-tunnel-manager/tunnels.json
 ```
 
-每个连接组使用 `TunnelConfig` 表示。`id`、`name`、`sshHost`、标签、收藏、手工顺序、最近使用时间、自动重连和自动启动属于连接组；`rules` 中的 `TunnelForwardRule` 独立保存模式、监听端、目标端、URL、启用状态和风险确认签名。
+每个连接组使用 `TunnelConfig` 表示。`id`、`name`、`sshHost`、标签、收藏、手工顺序、最近使用时间、自动重连和自动启动属于连接组；`rules` 中的 `TunnelForwardRule` 独立保存模式、监听端、目标端、URL、启用状态、风险确认签名和可选健康检查。
 
 - `id`：隧道唯一标识。
 - `rules[].mode`：`localForward`、`remoteForward` 或 `dynamicForward`。
 - `rules[].localHost`、`rules[].localPort`、`rules[].remoteHost`、`rules[].remotePort`：按模式表示监听端和目标端。
 - `rules[].openURL`、`rules[].isEnabled`：规则级打开地址和启用状态。
+- `rules[].healthCheck`：可选的规则级健康检查，保存 `kind`、可选 `url`、`interval` 和 `timeout`；缺失即关闭。
 - `rules[].riskConfirmationSignature`：与模式、监听地址和端口绑定；修改监听内容后自动失效。
 - `sshConfigName`：SSH Config 引用使用。
 - `tags`：标签数组，去除首尾空白并按大小写不敏感方式判重；最多 10 个，每个最多 32 个字符。
@@ -139,7 +143,7 @@ zip 包使用本机 ad-hoc 签名，不包含 Apple Developer ID notarization，
 
 首次把 `remoteForward` 写入已有配置前，`TunnelConfigStore` 会把原始 `tunnels.json` 一次性复制为 `tunnels.json.pre-remote-forward.bak`，权限收紧为 `0600`。备份保留原始字节且不会被后续保存覆盖；降级时退出应用并用该文件替换 `tunnels.json` 即可恢复旧版可读配置。
 
-配置导出使用 `TunnelConfigurationDocument`，当前 `schemaVersion` 为 `2`，顶层字段为 `schemaVersion`、`exportedAt`、`appVersion` 和 `configs`。v2 导出连接组及其规则；导入继续读取 v1 单端口结构并复用本地迁移逻辑。运行进程、stderr、错误历史和凭据不会进入文档；导入预览始终清除规则风险确认。
+配置导出使用 `TunnelConfigurationDocument`，当前 `schemaVersion` 为 `3`，顶层字段为 `schemaVersion`、`exportedAt`、`appVersion` 和 `configs`。v3 在连接组规则中增加可选健康检查；导入继续读取 v1 单端口结构和 v2 连接组。v1、v2 在迁移时强制清除健康检查，避免旧格式中的未知同名字段意外创建探测任务。运行进程、健康历史、stderr、错误历史和凭据不会进入文档；导入预览始终清除规则风险确认。
 
 导入文件上限为 1 MiB、配置上限为 1000 条。解析后先在内存中完成格式版本、必填字段、Host、端口、HTTP/HTTPS URL、标签、重复 UUID、本地监听冲突和暴露监听检查。高于当前版本的格式直接拒绝。相同 UUID 支持跳过、替换和作为副本三种策略，默认跳过；副本生成新 UUID。所有实际导入项强制把 `isAutoStartEnabled` 设为 `false`、把 `lastUsedAt` 置空，自动重连等其他持久化设置保持导出值。
 
@@ -295,6 +299,10 @@ SSH Config 引用只保存 `sshConfigName`，由 `~/.ssh/config` 中的 Host 条
 
 本地监听探测每轮只运行一次固定的 `/usr/sbin/lsof -nP -iTCP -sTCP:LISTEN`，再用同一份输出判断全部本地和 SOCKS 端点，规则数量不会增加子进程数量。存在运行意图但尚未确认监听时每 2 秒自动检查；确认稳定监听或全部停止后改为每 30 秒检查。启动、停止、保存、导入和用户手工刷新仍立即触发检查，且同一时刻最多存在一个后台状态探测任务。监听结果与当前运行时相同时不写入 `@Published runtimes`，避免主列表发生无意义的 SwiftUI 重新计算和布局。
 
+规则级健康检查只有在规则已启用、SSH 进程属于当前运行代次且本地监听已由上述状态探测确认后才进入调度。`HealthCheckScheduler` 只保留一个到期队列、最多 8 个活动探测任务和一个唤醒任务，超额规则排队而不是无限创建 `Task`。停止、编辑、删除、重启、断网、睡眠和应用退出会取消活动任务；恢复后在 0.9 秒窗口内确定性错峰。回调写入前再次核对配置、规则 UUID、健康参数、进程、监听状态和运行代次，拒绝所有过期结果。
+
+TCP 只验证本地监听可建连；HTTP/HTTPS 对配置的本地 URL 发起 GET，沿用系统 TLS 信任，收到响应头后即取消并丢弃正文，`200...399` 视为成功；SOCKS5 发送 `05 01 00` 并只接受 `05 00`，不连接外部目标。单规则连续失败 3 次转为异常，任意一次成功恢复。健康状态保存在运行时内存并与 SSH 状态、自动重连状态、错误摘要和系统通知完全分离，不持久化历史，也不改变进程生命周期。
+
 菜单栏窗口顶部会显示简短统计：
 
 ```text
@@ -324,6 +332,7 @@ SSH Config 引用只保存 `sshConfigName`，由 `~/.ssh/config` 中的 Host 条
 - `127.0.0.1`、`localhost`、`::1` 和 `[::1]` 按回环地址处理；其他本地绑定地址都按可能暴露处理，不进行 DNS 解析。
 - SSH Config 引用会检查 `ssh -G` 解析出的本地、远端和动态转发监听地址，并使用相应的风险确认。
 - `openURL` 在输入、导入和实际交给系统打开前都只允许带 host 的 `http` 或 `https` URL。
+- HTTP/HTTPS 健康检查 URL 不允许内嵌用户名或密码，且必须与所属规则的本地监听地址和端口重叠；探测响应正文不进入内存状态、日志或诊断复制。
 - 端口必须在 `1...65535` 范围内。
 - 持久化配置和每个被扫描的 SSH Config 文件在完整读取前检查 1 MiB 上限，并在读取后再次校验，避免异常大文件造成无界内存消耗。
 

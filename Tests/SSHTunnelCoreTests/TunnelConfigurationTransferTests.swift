@@ -9,6 +9,14 @@ import Testing
     tunnel.manualOrder = 4
     tunnel.isAutoReconnectEnabled = true
     tunnel.isAutoStartEnabled = true
+    tunnel.replaceRules(tunnel.effectiveRules.map { rule in
+        var value = rule
+        value.healthCheck = TunnelHealthCheckConfiguration(
+            kind: .http,
+            url: URL(string: "http://127.0.0.1:\(rule.localPort)/health")
+        )
+        return value
+    })
     let exportedAt = Date(timeIntervalSince1970: 1_750_000_000)
     let transfer = TunnelConfigurationTransfer()
 
@@ -16,18 +24,29 @@ import Testing
     let document = try transfer.decode(data)
     let json = try #require(String(data: data, encoding: .utf8))
 
-    #expect(document.schemaVersion == 2)
+    #expect(document.schemaVersion == 3)
     #expect(document.exportedAt == exportedAt)
     #expect(document.appVersion == "0.3.2")
     #expect(document.configs == [tunnel])
     #expect(json.contains("\"isAutoReconnectEnabled\" : true"))
     #expect(json.contains("\"isAutoStartEnabled\" : true"))
     #expect(json.contains("\"rules\""))
+    #expect(json.contains("\"healthCheck\""))
     #expect(!json.contains("process"))
     #expect(!json.contains("stderr"))
     #expect(!json.contains("errorHistory"))
     #expect(!json.contains("credential"))
     #expect(!json.contains("riskConfirmation"))
+}
+
+@Test func importReadsSchemaTwoRulesWithHealthChecksDisabled() throws {
+    let data = Data(#"{"schemaVersion":2,"exportedAt":"2025-06-15T15:06:40Z","appVersion":"0.4.0","configs":[{"id":"00000000-0000-0000-0000-000000000072","mode":"localForward","name":"Version two","sshHost":"legacy-host","tags":[],"isFavorite":false,"isAutoReconnectEnabled":false,"isAutoStartEnabled":false,"rules":[{"id":"00000000-0000-0000-0000-000000000073","mode":"localForward","localHost":"127.0.0.1","localPort":15432,"remoteHost":"db","remotePort":5432,"isEnabled":true,"healthCheck":{"kind":"tcp","interval":30,"timeout":3}}]}]}"#.utf8)
+
+    let document = try TunnelConfigurationTransfer().decode(data)
+    let rule = try #require(document.configs.first?.effectiveRules.first)
+
+    #expect(document.schemaVersion == 2)
+    #expect(rule.healthCheck == nil)
 }
 
 @Test func importReadsSchemaOneAndMigratesSingleForwardToAGroup() throws {

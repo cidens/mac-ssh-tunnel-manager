@@ -229,6 +229,38 @@ enum AppStrings {
         string("diagnostic.category.\(category.rawValue)", language: language)
     }
 
+    static func healthKind(_ kind: TunnelHealthCheckKind, language: String? = nil) -> String {
+        string("health.kind.\(kind.rawValue)", language: language)
+    }
+
+    static func healthPhase(_ phase: TunnelHealthAggregatePhase, language: String? = nil) -> String {
+        let key: String
+        switch phase {
+        case .notConfigured: key = "notConfigured"
+        case .waiting: key = "waiting"
+        case .healthy: key = "healthy"
+        case .unhealthy: key = "unhealthy"
+        }
+        return string("health.phase.\(key)", language: language)
+    }
+
+    static func healthPhase(_ phase: RuleHealthCheckPhase, language: String? = nil) -> String {
+        let key: String
+        switch phase {
+        case .waiting: key = "waiting"
+        case .healthy: key = "healthy"
+        case .unhealthy: key = "unhealthy"
+        }
+        return string("health.phase.\(key)", language: language)
+    }
+
+    static func healthFailureCategory(
+        _ category: HealthProbeFailureCategory,
+        language: String? = nil
+    ) -> String {
+        string("health.failure.\(category.rawValue)", language: language)
+    }
+
     static func connectionDetails(language: String? = nil) -> String {
         string("diagnostic.details", language: language)
     }
