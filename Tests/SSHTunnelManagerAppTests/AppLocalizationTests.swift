@@ -56,6 +56,25 @@ import Testing
     #expect(AppStrings.healthKind(.socks5, language: "en") == "SOCKS5")
     #expect(AppStrings.healthPhase(RuleHealthCheckPhase.unhealthy, language: "zh-Hans") == "异常")
     #expect(AppStrings.healthFailureCategory(.tls, language: "en") == "TLS validation failed")
+    #expect(AppStrings.format("tagBatch.action.start", language: "en", 5) == "Start All (5)")
+    #expect(AppStrings.format("tagBatch.action.start", language: "zh-Hans", 5) == "全部启动（5）")
+    #expect(
+        AppStrings.format("tagBatch.help.start", language: "en", 5, "Production")
+            .contains("all 5 connections tagged “Production”")
+    )
+    #expect(
+        AppStrings.format("tagBatch.help.start", language: "zh-Hans", 5, "生产")
+            .contains("“生产”标签下的全部 5 个连接")
+    )
+    #expect(AppStrings.string("tagBatch.reason.riskConfirmation", language: "zh-Hans").contains("逐条确认"))
+    #expect(
+        AppStrings.format("tagBatch.result.start", language: "zh-Hans", 3, 1, 0)
+            == "启动请求 3 · 已跳过 1 · 失败 0"
+    )
+    #expect(
+        AppStrings.format("tagBatch.result.stop", language: "en", 3, 1, 0)
+            == "Stopped 3 · Skipped 1 · Failed 0"
+    )
     #expect(AppStrings.loginItemSettingsTitle(language: "en") == "Launch at Login")
     #expect(AppStrings.loginItemSettingsTitle(language: "zh-Hans") == "登录时启动")
     #expect(AppStrings.notificationUnavailableOutsideApp(language: "en").contains("swift run"))

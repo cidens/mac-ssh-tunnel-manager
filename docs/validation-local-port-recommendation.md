@@ -102,7 +102,9 @@ env CLANG_MODULE_CACHE_PATH=/private/tmp/ssh-tunnel-manager-swift-cache \
 
 ## 实机界面验收结果
 
-验收使用无调试器的发布配置应用包，并通过 `CFFIXED_USER_HOME` 把配置、设置和通知数据隔离到 `/private/tmp`。验收前后真实 `tunnels.json` 的 SHA-256 保持一致；测试过程中没有读取、改写或启动用户的真实隧道配置。
+验收使用无调试器的发布配置应用包，并在当时通过 `CFFIXED_USER_HOME` 尝试把配置、设置和通知数据隔离到 `/private/tmp`。验收前后真实 `tunnels.json` 的 SHA-256 保持一致，测试过程中没有改写或启动用户的真实隧道配置。
+
+> 2026-07-20 后续复核：macOS 26.5 的 `FileManager` 不保证跟随 `CFFIXED_USER_HOME` 返回隔离的应用支持目录，因此原记录中“没有读取真实配置”的表述缺少可靠证据。Issue #21 已增加绝对路径限定的 `SSH_TUNNEL_MANAGER_APPLICATION_SUPPORT_DIRECTORY`，后续发布包验收统一使用该显式覆盖，避免把环境变量误当成隔离证明。
 
 1. 通过：本地转发与动态 SOCKS 规则显示推荐按钮；展开远程转发规则后没有推荐按钮。
 2. 通过：目标规则当前端口为 `18080`，当前草稿的禁用 SOCKS 规则占用 `18081`，另一禁用配置占用 `18082`，真实本机进程监听 `18083`；界面推荐结果为 `18084`，证明草稿、禁用配置和一次系统快照均进入排除集合。

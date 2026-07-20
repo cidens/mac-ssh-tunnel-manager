@@ -31,7 +31,7 @@ struct SystemSSHConfigResolver: SSHConfigResolving {
             guard waitUntilExit(process, timeout: timeout) else {
                 try? output.fileHandleForReading.close()
                 _ = readCompleted.wait(timeout: .now() + 0.5)
-                return .timedOut
+                return Task.isCancelled ? .failed : .timedOut
             }
             readCompleted.wait()
             guard process.terminationStatus == 0 else {
@@ -50,16 +50,27 @@ struct SystemSSHConfigResolver: SSHConfigResolving {
             semaphore.signal()
         }
 
-        if semaphore.wait(timeout: .now() + timeout) == .success {
-            return true
+        let deadline = Date().addingTimeInterval(timeout)
+        while Date() < deadline {
+            if semaphore.wait(timeout: .now() + 0.01) == .success {
+                return true
+            }
+            if Task.isCancelled {
+                terminate(process, completion: semaphore)
+                return false
+            }
         }
 
+        terminate(process, completion: semaphore)
+        return false
+    }
+
+    private func terminate(_ process: Process, completion semaphore: DispatchSemaphore) {
         process.terminate()
         if semaphore.wait(timeout: .now() + 1) == .timedOut, process.isRunning {
             kill(process.processIdentifier, SIGKILL)
             _ = semaphore.wait(timeout: .now() + 0.5)
         }
-        return false
     }
 }
 

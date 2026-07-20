@@ -64,10 +64,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     private static func defaultSettingsURL() -> URL {
-        let base = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first
-            ?? FileManager.default.homeDirectoryForCurrentUser
-        return base
-            .appending(path: "ssh-tunnel-manager", directoryHint: .isDirectory)
+        AppSupportPaths.directory()
             .appending(path: "settings.json")
     }
 

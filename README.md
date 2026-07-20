@@ -21,6 +21,7 @@
 - 可为单条本地转发或动态 SOCKS 规则启用默认关闭的 TCP、HTTP/HTTPS 或 SOCKS5 健康检查；健康异常独立展示，不会停止 SSH 或触发自动重连。
 - 隧道配置以 JSON 保存在本机。
 - 支持通过标签、收藏、搜索和排序快速定位隧道配置。
+- 选中标签后可查看全部成员的状态汇总，并一键批量启动或停止；搜索、收藏和排序不会缩小批量操作范围。
 - 支持为单条隧道启用自动重连，并在断网或睡眠恢复后按退避策略恢复。
 - 支持使用 macOS 官方登录项启动应用，并只自动连接逐条明确启用的隧道；两项设置均默认关闭。
 - 支持默认关闭的连接失败/恢复通知，以及不含配置名称、Host、端口目标和原始 stderr 的可复制诊断信息。
@@ -108,6 +109,7 @@ swift test
 - [隧道编辑器设计](docs/design-tunnel-editor.md)
 - [隧道编辑器验收记录](docs/validation-tunnel-editor.md)
 - [配置组织功能验收记录](docs/validation-config-organization.md)
+- [标签批量操作验收记录](docs/validation-tag-batch-actions.md)
 - [自动重连与网络、睡眠恢复验收记录](docs/validation-auto-reconnect.md)
 - [连接通知与诊断验收记录](docs/validation-connection-notifications.md)
 - [SSH Config 只读导入验收记录](docs/validation-ssh-config-import.md)
