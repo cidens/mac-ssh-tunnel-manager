@@ -47,6 +47,18 @@ struct TunnelRuleDraft: Identifiable, Equatable {
         }
     }
 
+    var localPortRecommendationFingerprint: LocalPortRecommendationFingerprint? {
+        guard mode == .localForward || mode == .dynamicForward else { return nil }
+        let host = localHost.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !host.isEmpty else { return nil }
+        return LocalPortRecommendationFingerprint(
+            ruleID: id,
+            mode: mode,
+            host: host,
+            portText: localPort.trimmingCharacters(in: .whitespacesAndNewlines)
+        )
+    }
+
     init() {}
 
     init(rule: TunnelForwardRule) {
@@ -102,6 +114,13 @@ struct TunnelRuleDraft: Identifiable, Equatable {
         let normalizedPort = port.trimmingCharacters(in: .whitespacesAndNewlines)
         return "\(normalizedHost.isEmpty ? "—" : normalizedHost):\(normalizedPort.isEmpty ? "—" : normalizedPort)"
     }
+}
+
+struct LocalPortRecommendationFingerprint: Equatable, Sendable {
+    let ruleID: UUID
+    let mode: TunnelMode
+    let host: String
+    let portText: String
 }
 
 struct TunnelDraft: Equatable {
@@ -206,6 +225,32 @@ struct TunnelDraft: Equatable {
             return false
         }
         currentRules.remove(at: index)
+        rules = currentRules
+        return true
+    }
+
+    @discardableResult
+    mutating func applyRecommendedLocalPort(_ port: Int, to ruleID: UUID) -> Bool {
+        guard (LocalPortOccupancyIndex.minimumPort...LocalPortOccupancyIndex.maximumPort).contains(port) else {
+            return false
+        }
+        var currentRules = rules
+        guard let index = currentRules.firstIndex(where: { $0.id == ruleID }),
+              currentRules[index].mode == .localForward || currentRules[index].mode == .dynamicForward else {
+            return false
+        }
+
+        var rule = currentRules[index]
+        let previousPort = Int(rule.localPort.trimmingCharacters(in: .whitespacesAndNewlines))
+        rule.openURL = Self.updatedOpenURL(
+            rule.openURL,
+            listenerHost: rule.localHost,
+            previousPort: previousPort,
+            recommendedPort: port
+        )
+        rule.localPort = String(port)
+        rule.riskConfirmationSignature = nil
+        currentRules[index] = rule
         rules = currentRules
         return true
     }
@@ -338,5 +383,22 @@ struct TunnelDraft: Equatable {
         }
         let remaining = try additionalRules.map { try $0.makeRule() }
         config.replaceRules([primary] + remaining)
+    }
+
+    private static func updatedOpenURL(
+        _ value: String,
+        listenerHost: String,
+        previousPort: Int?,
+        recommendedPort: Int
+    ) -> String {
+        guard let previousPort,
+              var components = URLComponents(string: value),
+              let urlHost = components.host,
+              components.port == previousPort,
+              LocalPortOccupancyIndex.hostsOverlap(listenerHost, urlHost) else {
+            return value
+        }
+        components.port = recommendedPort
+        return components.string ?? value
     }
 }

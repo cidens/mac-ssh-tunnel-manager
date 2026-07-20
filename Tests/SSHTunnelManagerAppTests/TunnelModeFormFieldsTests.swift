@@ -204,3 +204,67 @@ import SSHTunnelCore
     #expect(draft.hasReachedRuleLimit)
     #expect(!draft.canAddRule)
 }
+
+@Test func applyingRecommendedPortUpdatesMatchingURLAndClearsRiskConfirmation() {
+    var draft = TunnelDraft()
+    draft.localHost = "127.0.0.1"
+    draft.localPort = "18080"
+    draft.remoteHost = "example-service"
+    draft.remotePort = "80"
+    draft.openURL = "http://localhost:18080/path?q=1#section"
+    draft.primaryRiskConfirmationSignature = "old-signature"
+
+    let applied = draft.applyRecommendedLocalPort(18081, to: draft.primaryRuleID)
+
+    #expect(applied)
+    #expect(draft.localPort == "18081")
+    #expect(draft.openURL == "http://localhost:18081/path?q=1#section")
+    #expect(draft.primaryRiskConfirmationSignature == nil)
+}
+
+@Test func applyingRecommendedPortDoesNotRewriteUnrelatedURL() {
+    var draft = TunnelDraft()
+    draft.localHost = "127.0.0.1"
+    draft.localPort = "18080"
+    draft.remoteHost = "example-service"
+    draft.remotePort = "80"
+    draft.openURL = "https://example.invalid:18080/path"
+
+    let applied = draft.applyRecommendedLocalPort(18081, to: draft.primaryRuleID)
+    #expect(applied)
+    #expect(draft.openURL == "https://example.invalid:18080/path")
+}
+
+@Test func applyingRecommendedPortChangesOnlyTheSelectedRule() {
+    var draft = TunnelDraft()
+    draft.localHost = "127.0.0.1"
+    draft.localPort = "18080"
+    draft.remoteHost = "example-service"
+    draft.remotePort = "80"
+    var second = TunnelRuleDraft()
+    second.mode = .dynamicForward
+    second.localHost = "127.0.0.1"
+    second.localPort = "1080"
+    draft.additionalRules = [second]
+
+    let applied = draft.applyRecommendedLocalPort(1081, to: second.id)
+    #expect(applied)
+    #expect(draft.localPort == "18080")
+    #expect(draft.additionalRules[0].localPort == "1081")
+}
+
+@Test func recommendedPortCannotBeAppliedToRemoteForwardOrPrivilegedPort() {
+    var draft = TunnelDraft()
+    draft.mode = .remoteForward
+    draft.localHost = "127.0.0.1"
+    draft.localPort = "3000"
+    draft.remoteHost = "localhost"
+    draft.remotePort = "18080"
+
+    let appliedToRemote = draft.applyRecommendedLocalPort(3001, to: draft.primaryRuleID)
+    #expect(!appliedToRemote)
+
+    draft.mode = .localForward
+    let appliedPrivilegedPort = draft.applyRecommendedLocalPort(80, to: draft.primaryRuleID)
+    #expect(!appliedPrivilegedPort)
+}

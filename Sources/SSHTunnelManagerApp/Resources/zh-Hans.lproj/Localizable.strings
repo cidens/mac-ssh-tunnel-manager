@@ -242,3 +242,12 @@
 "configuration.import.issue.duplicateName" = "隧道名称重复：%@";
 "configuration.import.issue.portConflict" = "本地监听冲突：%@:%d";
 "configuration.import.issue.exposure" = "监听地址可能暴露到网络：%@:%d；导入后仍需手工确认才能启动。";
+"portRecommendation.action" = "推荐可用端口";
+"portRecommendation.loading" = "正在检查本地端口…";
+"portRecommendation.suggested" = "可用端口：%d";
+"portRecommendation.use" = "使用 %d";
+"portRecommendation.error.unsupported" = "仅本地转发和动态 SOCKS 规则支持端口推荐。";
+"portRecommendation.error.invalidHost" = "请先填写有效的本地监听地址。";
+"portRecommendation.error.unavailable" = "未找到可用的非特权本地端口。";
+"portRecommendation.error.snapshotFailed" = "无法检查本机监听端口，请重试。";
+"portRecommendation.error.snapshotTimedOut" = "检查本机监听端口超时，请重试。";
