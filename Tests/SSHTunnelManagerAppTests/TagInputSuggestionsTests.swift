@@ -3,6 +3,14 @@ import SSHTunnelCore
 import Testing
 @testable import SSHTunnelManagerApp
 
+#if DEBUG
+private let tagPerformanceWarmupCount = 0
+private let tagPerformanceSampleCount = 1
+#else
+private let tagPerformanceWarmupCount = 5
+private let tagPerformanceSampleCount = 30
+#endif
+
 @Suite(.serialized)
 struct TagInputSuggestionsTests {
     @Test func filtersCurrentFragmentAndExcludesSelectedTags() {
@@ -105,7 +113,7 @@ struct TagInputSuggestionsTests {
         }
 
         print(
-            "tag-features tags=10000 samples=30"
+            "tag-features tags=10000 samples=\(tagPerformanceSampleCount)"
                 + " matching_p95_ms=\(matchingP95)"
                 + " preparation_p95_ms=\(preparationP95)"
                 + " index_p95_ms=\(indexP95)"
@@ -121,10 +129,10 @@ struct TagInputSuggestionsTests {
         let clock = ContinuousClock()
         var samples: [Double] = []
 
-        for iteration in 0..<35 {
+        for iteration in 0..<(tagPerformanceWarmupCount + tagPerformanceSampleCount) {
             let started = clock.now
             operation()
-            if iteration >= 5 {
+            if iteration >= tagPerformanceWarmupCount {
                 samples.append(milliseconds(started.duration(to: .now)))
             }
         }
