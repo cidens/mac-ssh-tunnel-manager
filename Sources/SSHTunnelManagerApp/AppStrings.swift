@@ -748,6 +748,15 @@ enum AppStrings {
     static func searchTunnels(language: String? = nil) -> String { string("filter.search", language: language) }
     static func favoritesOnly(language: String? = nil) -> String { string("filter.favorites", language: language) }
     static func allTags(language: String? = nil) -> String { string("filter.allTags", language: language) }
+    static func chooseTag(language: String? = nil) -> String { string("filter.chooseTag", language: language) }
+    static func searchTags(language: String? = nil) -> String { string("filter.searchTags", language: language) }
+    static func tagCount(_ count: Int, language: String? = nil) -> String { format("filter.tagCount", language: language, count) }
+    static func noMatchingTags(language: String? = nil) -> String { string("filter.noMatchingTags", language: language) }
+    static func pinnedTags(language: String? = nil) -> String { string("filter.pinnedTags", language: language) }
+    static func pinnedTagSlot(_ slot: Int, language: String? = nil) -> String { format("filter.pinnedTagSlot", language: language, slot) }
+    static func replacePinnedTagHelp(_ slot: Int, language: String? = nil) -> String { format("filter.replacePinnedTagHelp", language: language, slot) }
+    static func configurationCount(_ count: Int, language: String? = nil) -> String { format("filter.configurationCount", language: language, count) }
+    static func failedToSavePinnedTags(_ reason: String, language: String? = nil) -> String { format("filter.pinnedTags.saveError", language: language, reason) }
     static func clearFilters(language: String? = nil) -> String { string("filter.clear", language: language) }
     static func resultCount(_ count: Int, language: String? = nil) -> String { format("filter.resultCount", language: language, count) }
     static func noMatchingTunnels(language: String? = nil) -> String { string("filter.empty", language: language) }

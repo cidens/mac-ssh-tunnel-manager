@@ -8,6 +8,10 @@ Current version: `0.5.0`
 
 The app name is `SSH Tunnel Manager`; the SwiftPM executable target remains `ssh-tunnel-manager`.
 
+<p align="center">
+  <img src="docs/images/app-overview-en.png" alt="SSH Tunnel Manager interface" width="460">
+</p>
+
 ## Features
 
 - Runs as an AppKit icon-only status item with a SwiftUI panel and no Dock icon.
@@ -94,20 +98,8 @@ swift test
 
 ## Documentation
 
+- [Complete documentation index (Chinese)](docs/README.md)
 - [Architecture](docs/architecture.en.md)
-- [Global shortcut requirements (Chinese)](docs/requirements-global-shortcut.md)
-- [Global shortcut design (Chinese)](docs/design-global-shortcut.md)
-- [Global shortcut validation (Chinese)](docs/validation-global-shortcut.md)
-- [Tunnel editor requirements (Chinese)](docs/requirements-tunnel-editor.md)
-- [Tunnel editor design (Chinese)](docs/design-tunnel-editor.md)
-- [Tunnel editor validation (Chinese)](docs/validation-tunnel-editor.md)
-- [Configuration organization validation (Chinese)](docs/validation-config-organization.md)
-- [Automatic reconnection validation (Chinese)](docs/validation-auto-reconnect.md)
-- [Connection notification and diagnostics validation (Chinese)](docs/validation-connection-notifications.md)
-- [SSH Config read-only import validation (Chinese)](docs/validation-ssh-config-import.md)
-- [JSON configuration import and export validation (Chinese)](docs/validation-json-import-export.md)
-- [Login item and per-tunnel auto-start validation (Chinese)](docs/validation-login-auto-start.md)
-- [Connection group validation (Chinese)](docs/validation-connection-groups.md)
 - [Distribution](docs/distribution.en.md)
 - [Privacy notes](docs/privacy.en.md)
 - [Troubleshooting](docs/troubleshooting.en.md)
@@ -132,7 +124,7 @@ Each connection group stores group-level identity, name, SSH Host, tags, favorit
 - `sshHost`
 - `sshConfigName`
 - `rules`: app-managed forwarding rules; each includes `id`, `mode`, endpoints, `openURL`, `isEnabled`, and `riskConfirmationSignature`.
-- `tags`: up to 10 tags, with a maximum of 32 characters each and case-insensitive deduplication.
+- `tags`: up to 10 tags, with a maximum of 16 characters each and case-insensitive deduplication. While editing, up to eight matching existing tags are suggested and selecting one keeps the input ready for the next tag.
 - `isFavorite`: whether the tunnel is marked as a favorite.
 - `manualOrder`: stable manual sort position.
 - `lastUsedAt`: time when the SSH process was most recently started successfully.

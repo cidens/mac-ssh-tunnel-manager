@@ -8,6 +8,10 @@
 
 应用名称为 `SSH Tunnel Manager`，SwiftPM executable target 为 `ssh-tunnel-manager`。
 
+<p align="center">
+  <img src="docs/images/app-overview-zh-Hans.png" alt="SSH Tunnel Manager 中文界面" width="460">
+</p>
+
 应用保持轻量：
 
 - 使用 AppKit 状态栏项目和 SwiftUI 主界面运行在菜单栏，不显示 Dock 图标。
@@ -101,24 +105,8 @@ swift test
 
 ## 文档
 
+- [完整文档索引](docs/README.md)
 - [架构说明](docs/architecture.md)
-- [全局快捷键备用入口需求](docs/requirements-global-shortcut.md)
-- [全局快捷键备用入口技术设计](docs/design-global-shortcut.md)
-- [全局快捷键备用入口验收记录](docs/validation-global-shortcut.md)
-- [隧道编辑器需求](docs/requirements-tunnel-editor.md)
-- [隧道编辑器设计](docs/design-tunnel-editor.md)
-- [隧道编辑器验收记录](docs/validation-tunnel-editor.md)
-- [配置组织功能验收记录](docs/validation-config-organization.md)
-- [标签批量操作验收记录](docs/validation-tag-batch-actions.md)
-- [自动重连与网络、睡眠恢复验收记录](docs/validation-auto-reconnect.md)
-- [连接通知与诊断验收记录](docs/validation-connection-notifications.md)
-- [SSH Config 只读导入验收记录](docs/validation-ssh-config-import.md)
-- [JSON 配置导入导出验收记录](docs/validation-json-import-export.md)
-- [登录项与逐连接自动启动验收记录](docs/validation-login-auto-start.md)
-- [连接组与多规则转发验收记录](docs/validation-connection-groups.md)
-- [本地监听端口推荐验收记录](docs/validation-local-port-recommendation.md)
-- [规则级连接健康检查验收记录](docs/validation-connection-health-check.md)
-- [0.5.0 发布前验收记录](docs/validation-release-0.5.0.md)
 - [分发说明](docs/distribution.md)
 - [隐私说明](docs/privacy.md)
 - [排障手册](docs/troubleshooting.md)
@@ -154,7 +142,7 @@ swift test
 - `name`
 - `sshHost`
 - `sshConfigName`
-- `tags`：最多 10 个标签，每个标签最多 32 个字符，按大小写不敏感方式去重。
+- `tags`：最多 10 个标签，每个标签最多 16 个字符，按大小写不敏感方式去重；编辑时按当前输入片段建议最多 8 个已有标签，点击后继续保留输入焦点。
 - `isFavorite`：收藏状态。
 - `manualOrder`：稳定的手工排序序号。
 - `lastUsedAt`：最近一次成功启动 SSH 进程的时间。
